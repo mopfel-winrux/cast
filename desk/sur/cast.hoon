@@ -59,6 +59,7 @@
       =settings
       cache=(map episode-id octs)
       current=(unit [=podcast-id =episode-id])
+      archived=(set episode-id)
   ==
 ::
 ::  poke actions
@@ -78,6 +79,11 @@
       [%set-settings =settings]
       [%import-opml urls=(list @t)]
       [%add-episode =podcast-id title=@t audio-url=@t]
+      [%set-archived =episode-id archived=?]
+      [%mark-all-played =podcast-id]
+      [%mark-all-unplayed =podcast-id]
+      [%archive-all =podcast-id]
+      [%unarchive-all =podcast-id]
   ==
 ::
 ::  subscription updates
@@ -92,5 +98,7 @@
       [%settings-updated =settings]
       [%current-updated current=(unit [=podcast-id =episode-id])]
       [%download-complete =episode-id]
+      [%archived-updated =episode-id archived=?]
+      [%bulk-played-updated =podcast-id played=?]
   ==
 --

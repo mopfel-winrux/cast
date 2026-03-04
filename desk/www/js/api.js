@@ -90,5 +90,25 @@ const CastAPI = {
 
   addEpisode(podcastId, title, audioUrl) {
     return this.poke({ action: 'add-episode', 'podcast-id': podcastId, title, 'audio-url': audioUrl });
+  },
+
+  setArchived(episodeId, archived) {
+    return this.poke({ action: 'set-archived', 'episode-id': episodeId, archived });
+  },
+
+  markAllPlayed(podcastId) {
+    return this.poke({ action: 'mark-all-played', 'podcast-id': podcastId });
+  },
+
+  markAllUnplayed(podcastId) {
+    return this.poke({ action: 'mark-all-unplayed', 'podcast-id': podcastId });
+  },
+
+  archiveAll(podcastId) {
+    return this.poke({ action: 'archive-all', 'podcast-id': podcastId });
+  },
+
+  unarchiveAll(podcastId) {
+    return this.poke({ action: 'unarchive-all', 'podcast-id': podcastId });
   }
 };

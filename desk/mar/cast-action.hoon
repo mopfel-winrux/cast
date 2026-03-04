@@ -62,6 +62,33 @@
       =/  f  (ot ~[playback-speed+ni auto-download+bo refresh-interval+ni])
       =/  [spd=@ud dl=? interval=@ud]  (f jon)
       [%set-settings [spd dl (mul ~s1 interval)]]
+    ::
+        %'import-opml'
+      =/  urls=(list @t)
+        ((ot ~[urls+(ar so)]) jon)
+      [%import-opml urls]
+    ::
+        %'add-episode'
+      =/  f  (ot ~[podcast-id+(se %uv) title+so audio-url+so])
+      =/  [pid=@uv tit=@t url=@t]  (f jon)
+      [%add-episode pid tit url]
+    ::
+        %'set-archived'
+      =/  f  (ot ~[episode-id+(se %uv) archived+bo])
+      =/  [eid=@uv arc=?]  (f jon)
+      [%set-archived eid arc]
+    ::
+        %'mark-all-played'
+      [%mark-all-played ((ot ~[podcast-id+(se %uv)]) jon)]
+    ::
+        %'mark-all-unplayed'
+      [%mark-all-unplayed ((ot ~[podcast-id+(se %uv)]) jon)]
+    ::
+        %'archive-all'
+      [%archive-all ((ot ~[podcast-id+(se %uv)]) jon)]
+    ::
+        %'unarchive-all'
+      [%unarchive-all ((ot ~[podcast-id+(se %uv)]) jon)]
     ==
   --
 ++  grad  %noun

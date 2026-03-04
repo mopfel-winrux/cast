@@ -4,6 +4,7 @@ const App = {
   podcasts: [],
   currentPodcast: null,
   episodeFilter: 'all',
+  showArchived: false,
 
   async init() {
     Player.init();
@@ -137,6 +138,7 @@ const App = {
   async showPodcastDetail(id) {
     this.showPage('podcast');
     this.episodeFilter = 'all';
+    this.showArchived = false;
     const detail = document.getElementById('podcast-detail');
     const list = document.getElementById('episode-list');
     detail.innerHTML = '<p class="loading">Loading...</p>';
@@ -147,6 +149,7 @@ const App = {
       this.currentPodcast = data;
       const episodes = data.episodes || [];
       episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+      const visible = episodes.filter(e => !e.archived);
 
       detail.innerHTML = `
         <div class="podcast-header">
@@ -159,13 +162,27 @@ const App = {
             <div class="podcast-actions">
               <button class="btn btn-small" onclick="App.handleRefreshPodcast('${id}')">Refresh</button>
               <button class="unsub-btn" onclick="App.handleUnsubscribe('${id}')">Unsubscribe</button>
+              <div class="hamburger-menu">
+                <button class="hamburger-btn" onclick="App.toggleHamburger(event)">&#8942;</button>
+                <div class="hamburger-dropdown">
+                  <button onclick="App.markAllPlayed('${id}')">Mark all as played</button>
+                  <button onclick="App.markAllUnplayed('${id}')">Mark all as unplayed</button>
+                  <button onclick="App.archiveAll('${id}')">Archive all</button>
+                  <button onclick="App.unarchiveAll('${id}')">Unarchive all</button>
+                  <label class="hamburger-checkbox">
+                    <input type="checkbox" onchange="App.toggleShowArchived()" id="show-archived-toggle">
+                    Show archived
+                  </label>
+                </div>
+              </div>
             </div>
           </div>
         </div>
         <div class="episode-filters">
-          <button class="filter-btn active" onclick="App.filterEpisodes('all', this)">All (${episodes.length})</button>
-          <button class="filter-btn" onclick="App.filterEpisodes('unplayed', this)">Unplayed (${episodes.filter(e => !e.played).length})</button>
-          <button class="filter-btn" onclick="App.filterEpisodes('in-progress', this)">In Progress (${episodes.filter(e => e.position > 0 && !e.played).length})</button>
+          <button class="filter-btn active" onclick="App.filterEpisodes('all', this)">All (${visible.length})</button>
+          <button class="filter-btn" onclick="App.filterEpisodes('unplayed', this)">Unplayed (${visible.filter(e => !e.played).length})</button>
+          <button class="filter-btn" onclick="App.filterEpisodes('in-progress', this)">In Progress (${visible.filter(e => e.position > 0 && !e.played).length})</button>
+          ${episodes.filter(e => e.archived).length > 0 ? `<button class="filter-btn" onclick="App.filterEpisodes('archived', this)">Archived (${episodes.filter(e => e.archived).length})</button>` : ''}
         </div>
       `;
 
@@ -190,10 +207,18 @@ const App = {
   renderEpisodes(episodes, podcastId) {
     const list = document.getElementById('episode-list');
     let filtered = episodes;
-    if (this.episodeFilter === 'unplayed') {
-      filtered = episodes.filter(e => !e.played);
-    } else if (this.episodeFilter === 'in-progress') {
-      filtered = episodes.filter(e => e.position > 0 && !e.played);
+    if (this.episodeFilter === 'archived') {
+      filtered = filtered.filter(e => e.archived);
+    } else {
+      // hide archived unless toggled
+      if (!this.showArchived) {
+        filtered = filtered.filter(e => !e.archived);
+      }
+      if (this.episodeFilter === 'unplayed') {
+        filtered = filtered.filter(e => !e.played);
+      } else if (this.episodeFilter === 'in-progress') {
+        filtered = filtered.filter(e => e.position > 0 && !e.played);
+      }
     }
 
     if (filtered.length === 0) {
@@ -202,7 +227,7 @@ const App = {
     }
 
     list.innerHTML = filtered.map(ep => `
-      <div class="episode-item ${ep.played ? 'played' : ''}" data-eid="${ep.id}">
+      <div class="episode-item ${ep.played ? 'played' : ''} ${ep.archived ? 'archived' : ''}" data-eid="${ep.id}">
         <div class="play-icon" onclick="App.playEpisode('${ep.id}')">&#9654;</div>
         <div class="ep-info" onclick="App.playEpisode('${ep.id}')">
           <div class="ep-title">${this.escHtml(ep.title)}</div>
@@ -216,6 +241,9 @@ const App = {
           <button onclick="App.enqueueEpisode('${podcastId}', '${ep.id}')" title="Add to queue">+Q</button>
           <button onclick="App.togglePlayed('${ep.id}', ${!ep.played})" title="Toggle played">
             ${ep.played ? '\u21a9' : '\u2713'}
+          </button>
+          <button onclick="App.toggleArchived('${ep.id}', ${!ep.archived})" title="${ep.archived ? 'Unarchive' : 'Archive'}">
+            ${ep.archived ? '\u21a9A' : 'A'}
           </button>
         </div>
       </div>
@@ -256,6 +284,90 @@ const App = {
         this.showPodcastDetail(this.currentPodcast.id);
       }
     } catch (e) { console.error(e); }
+  },
+
+  toggleHamburger(event) {
+    event.stopPropagation();
+    const dropdown = event.currentTarget.nextElementSibling;
+    const isOpen = dropdown.classList.contains('open');
+    // close any open dropdowns
+    document.querySelectorAll('.hamburger-dropdown.open').forEach(d => d.classList.remove('open'));
+    if (!isOpen) {
+      dropdown.classList.add('open');
+      // close on outside click
+      const close = () => { dropdown.classList.remove('open'); document.removeEventListener('click', close); };
+      setTimeout(() => document.addEventListener('click', close), 0);
+    }
+  },
+
+  async markAllPlayed(podcastId) {
+    document.querySelectorAll('.hamburger-dropdown.open').forEach(d => d.classList.remove('open'));
+    try {
+      await CastAPI.markAllPlayed(podcastId);
+      this.toast('Marked all as played', 'success');
+      this.showPodcastDetail(podcastId);
+    } catch (e) {
+      console.error(e);
+      this.toast('Failed to mark all played', 'error');
+    }
+  },
+
+  async markAllUnplayed(podcastId) {
+    document.querySelectorAll('.hamburger-dropdown.open').forEach(d => d.classList.remove('open'));
+    try {
+      await CastAPI.markAllUnplayed(podcastId);
+      this.toast('Marked all as unplayed', 'success');
+      this.showPodcastDetail(podcastId);
+    } catch (e) {
+      console.error(e);
+      this.toast('Failed to mark all unplayed', 'error');
+    }
+  },
+
+  async archiveAll(podcastId) {
+    document.querySelectorAll('.hamburger-dropdown.open').forEach(d => d.classList.remove('open'));
+    try {
+      await CastAPI.archiveAll(podcastId);
+      this.toast('Archived all episodes', 'success');
+      this.showPodcastDetail(podcastId);
+    } catch (e) {
+      console.error(e);
+      this.toast('Failed to archive all', 'error');
+    }
+  },
+
+  async unarchiveAll(podcastId) {
+    document.querySelectorAll('.hamburger-dropdown.open').forEach(d => d.classList.remove('open'));
+    try {
+      await CastAPI.unarchiveAll(podcastId);
+      this.toast('Unarchived all episodes', 'success');
+      this.showPodcastDetail(podcastId);
+    } catch (e) {
+      console.error(e);
+      this.toast('Failed to unarchive all', 'error');
+    }
+  },
+
+  toggleShowArchived() {
+    this.showArchived = !this.showArchived;
+    if (this.currentPodcast) {
+      const episodes = (this.currentPodcast.episodes || []).slice();
+      episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+      this.renderEpisodes(episodes, this.currentPodcast.id);
+    }
+  },
+
+  async toggleArchived(episodeId, archived) {
+    try {
+      await CastAPI.setArchived(episodeId, archived);
+      this.toast(archived ? 'Archived' : 'Unarchived', 'success');
+      if (this.currentPodcast) {
+        this.showPodcastDetail(this.currentPodcast.id);
+      }
+    } catch (e) {
+      console.error(e);
+      this.toast('Failed to update archive status', 'error');
+    }
   },
 
   // Queue
@@ -356,18 +468,37 @@ const App = {
     const btn = document.getElementById('subscribe-btn');
     btn.textContent = 'Subscribing...';
     btn.disabled = true;
+    const prevCount = this.podcasts.length;
 
     try {
       await CastAPI.subscribe(url);
       input.value = '';
-      this.toast('Subscribing... fetching feed');
-      setTimeout(async () => {
-        await this.loadPodcasts();
-        window.location.hash = '#/';
-        btn.textContent = 'Subscribe';
-        btn.disabled = false;
-        this.toast('Subscribed!', 'success');
-      }, 3000);
+      this.toast('Fetching and parsing feed...');
+      // poll until new podcast appears or timeout
+      const start = Date.now();
+      const poll = async () => {
+        try {
+          const data = await CastAPI.getPodcasts();
+          if ((data.podcasts || []).length > prevCount) {
+            this.podcasts = data.podcasts;
+            this.renderPodcasts();
+            window.location.hash = '#/';
+            btn.textContent = 'Subscribe';
+            btn.disabled = false;
+            this.toast('Subscribed!', 'success');
+            return;
+          }
+        } catch (e) { /* ignore poll errors */ }
+        if (Date.now() - start > 120000) {
+          await this.loadPodcasts();
+          btn.textContent = 'Subscribe';
+          btn.disabled = false;
+          this.toast('Feed is still loading, check back shortly');
+          return;
+        }
+        setTimeout(poll, 1500);
+      };
+      setTimeout(poll, 1500);
     } catch (e) {
       console.error(e);
       this.toast('Failed to subscribe', 'error');
@@ -399,18 +530,40 @@ const App = {
     const btn = document.getElementById('import-opml-btn');
     btn.textContent = 'Importing...';
     btn.disabled = true;
+    const prevCount = this.podcasts.length;
 
     try {
       await CastAPI.importOpml(urls);
       this.toast(`Importing ${urls.length} feeds...`);
       fileInput.value = '';
-      setTimeout(async () => {
-        await this.loadPodcasts();
-        window.location.hash = '#/';
-        btn.textContent = 'Import';
-        btn.disabled = false;
-        this.toast('OPML import complete!', 'success');
-      }, 5000);
+      // poll until all feeds arrive or timeout
+      const start = Date.now();
+      const target = prevCount + urls.length;
+      const poll = async () => {
+        try {
+          const data = await CastAPI.getPodcasts();
+          const cur = (data.podcasts || []).length;
+          btn.textContent = `Importing... (${cur - prevCount}/${urls.length})`;
+          if (cur >= target) {
+            this.podcasts = data.podcasts;
+            this.renderPodcasts();
+            window.location.hash = '#/';
+            btn.textContent = 'Import';
+            btn.disabled = false;
+            this.toast('OPML import complete!', 'success');
+            return;
+          }
+        } catch (e) { /* ignore poll errors */ }
+        if (Date.now() - start > 180000) {
+          await this.loadPodcasts();
+          btn.textContent = 'Import';
+          btn.disabled = false;
+          this.toast('Some feeds are still loading, check back shortly');
+          return;
+        }
+        setTimeout(poll, 2000);
+      };
+      setTimeout(poll, 2000);
     } catch (e) {
       console.error(e);
       this.toast('Failed to import OPML', 'error');

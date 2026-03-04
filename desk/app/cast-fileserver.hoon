@@ -162,8 +162,22 @@
   ::
   :-  &
   ?~  ext
-    ~&  [dap.bowl %not-found-extless]
-    [[404 ~] `(as-octs:mimes:html 'not found')]
+    ::  serve index.html for extensionless requests (SPA fallback)
+    =/  idx=path
+      :*  (scot %p our.bowl)
+          q.byk.bowl
+          (scot %da now.bowl)
+          (weld foot /index/html)
+      ==
+    ?.  .^(? %cu idx)
+      ~&  [dap.bowl %not-found-extless]
+      [[404 ~] `(as-octs:mimes:html 'not found')]
+    =+  .^(file=^vase %cr idx)
+    =+  ~|  [%no-mime-conversion %html]
+        .^(=tube:clay %cc (scot %p our.bowl) q.byk.bowl (scot %da now.bowl) /html/mime)
+    =+  !<(=mime (tube file))
+    :_  `q.mime
+    [200 ['content-type' 'text/html']~]
   =/  =path
     :*  (scot %p our.bowl)
         q.byk.bowl

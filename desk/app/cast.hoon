@@ -15,6 +15,7 @@
 %-  agent:dbug
 =|  state-0:cast
 =*  state  -
+=*  archived  archived.state
 %+  verb  &
 ^-  agent:gall
 |_  =bowl:gall
@@ -92,10 +93,15 @@
       =/  pid  podcast-id.act
       ?.  (~(has by podcasts) pid)
         `this
+      ::  collect episode IDs for this podcast to clean archived set
+      =/  eps=(map episode-id:cast episode:cast)
+        (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
+      =/  eids=(set episode-id:cast)  ~(key by eps)
       =/  upd=update:cast  [%podcast-removed pid]
       :_  %=  this
             podcasts  (~(del by podcasts) pid)
             episodes  (~(del by episodes) pid)
+            archived  (~(dif in archived) eids)
           ==
       :~  [%give %fact ~[/updates] cast-update+!>(upd)]
       ==
@@ -238,6 +244,73 @@
           [%'GET' url ~ ~]
           *outbound-config:iris
       ==
+    ::
+        %set-archived
+      =/  eid  episode-id.act
+      =/  new-archived=(set episode-id:cast)
+        ?:  archived.act
+          (~(put in archived) eid)
+        (~(del in archived) eid)
+      =/  upd=update:cast  [%archived-updated eid archived.act]
+      :_  this(archived new-archived)
+      :~  [%give %fact ~[/updates] cast-update+!>(upd)]
+      ==
+    ::
+        %mark-all-played
+      =/  pid  podcast-id.act
+      =/  eps=(map episode-id:cast episode:cast)
+        (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
+      =/  eids=(list episode-id:cast)  ~(tap in ~(key by eps))
+      =/  new-estate=(map episode-id:cast episode-state:cast)  estate
+      |-
+      ?~  eids
+        =/  upd=update:cast  [%bulk-played-updated pid %.y]
+        :_  this(estate new-estate)
+        :~  [%give %fact ~[/updates] cast-update+!>(upd)]
+        ==
+      =/  es=episode-state:cast
+        (fall (~(get by new-estate) i.eids) *episode-state:cast)
+      =.  played.es  %.y
+      %=  $
+        new-estate  (~(put by new-estate) i.eids es)
+        eids        t.eids
+      ==
+    ::
+        %mark-all-unplayed
+      =/  pid  podcast-id.act
+      =/  eps=(map episode-id:cast episode:cast)
+        (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
+      =/  eids=(list episode-id:cast)  ~(tap in ~(key by eps))
+      =/  new-estate=(map episode-id:cast episode-state:cast)  estate
+      |-
+      ?~  eids
+        =/  upd=update:cast  [%bulk-played-updated pid %.n]
+        :_  this(estate new-estate)
+        :~  [%give %fact ~[/updates] cast-update+!>(upd)]
+        ==
+      =/  es=episode-state:cast
+        (fall (~(get by new-estate) i.eids) *episode-state:cast)
+      =.  played.es  %.n
+      %=  $
+        new-estate  (~(put by new-estate) i.eids es)
+        eids        t.eids
+      ==
+    ::
+        %archive-all
+      =/  pid  podcast-id.act
+      =/  eps=(map episode-id:cast episode:cast)
+        (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
+      =/  eids=(set episode-id:cast)  ~(key by eps)
+      :_  this(archived (~(uni in archived) eids))
+      ~
+    ::
+        %unarchive-all
+      =/  pid  podcast-id.act
+      =/  eps=(map episode-id:cast episode:cast)
+        (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
+      =/  eids=(set episode-id:cast)  ~(key by eps)
+      :_  this(archived (~(dif in archived) eids))
+      ~
     ==
   ::
   ::  HTTP request handling
@@ -337,6 +410,7 @@
               ['played' b+played.es]
               ['position' (numb:enjs:format position.es)]
               ['downloaded' b+downloaded.es]
+              ['archived' b+(~(has in archived) eid)]
           ==
       ==
     ::
@@ -361,6 +435,7 @@
               ['duration' (numb:enjs:format duration.ep)]
               ['played' b+played.es]
               ['position' (numb:enjs:format position.es)]
+              ['archived' b+(~(has in archived) eid)]
           ==
       ==
     ::
@@ -523,6 +598,23 @@
           =/  f  (ot ~[podcast-id+(se %uv) title+so audio-url+so])
           =/  [pid=@uv tit=@t url=@t]  (f jon)
           [%add-episode pid tit url]
+        ::
+            %'set-archived'
+          =/  f  (ot ~[episode-id+(se %uv) archived+bo])
+          =/  [eid=@uv arc=?]  (f jon)
+          [%set-archived eid arc]
+        ::
+            %'mark-all-played'
+          [%mark-all-played ((ot ~[podcast-id+(se %uv)]) jon)]
+        ::
+            %'mark-all-unplayed'
+          [%mark-all-unplayed ((ot ~[podcast-id+(se %uv)]) jon)]
+        ::
+            %'archive-all'
+          [%archive-all ((ot ~[podcast-id+(se %uv)]) jon)]
+        ::
+            %'unarchive-all'
+          [%unarchive-all ((ot ~[podcast-id+(se %uv)]) jon)]
         ==
       --
     --

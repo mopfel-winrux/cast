@@ -92,6 +92,20 @@
       :~  ['type' s+'download-complete']
           ['episode-id' s+(scot %uv episode-id.upd)]
       ==
+    ::
+        %archived-updated
+      %-  pairs
+      :~  ['type' s+'archived-updated']
+          ['episode-id' s+(scot %uv episode-id.upd)]
+          ['archived' b+archived.upd]
+      ==
+    ::
+        %bulk-played-updated
+      %-  pairs
+      :~  ['type' s+'bulk-played-updated']
+          ['podcast-id' s+(scot %uv podcast-id.upd)]
+          ['played' b+played.upd]
+      ==
     ==
   --
 ++  grab
