@@ -701,4 +701,119 @@ h1 { margin-bottom: 20px; }
   .player-progress { display: none; }
   .add-form { flex-direction: column; }
   .add-form .input { max-width: 100%; }
+  .episode-filters { flex-wrap: wrap; }
+}
+
+/* Badge on podcast cards */
+.card-img-wrap {
+  position: relative;
+  display: inline-block;
+  width: 100%;
+}
+
+.card-img-wrap img {
+  width: 100%;
+  aspect-ratio: 1;
+  object-fit: cover;
+  border-radius: 12px;
+  background: var(--bg-card);
+}
+
+.badge {
+  position: absolute;
+  top: 6px;
+  right: 6px;
+  background: var(--accent);
+  color: white;
+  font-size: 11px;
+  font-weight: 700;
+  min-width: 22px;
+  height: 22px;
+  line-height: 22px;
+  text-align: center;
+  border-radius: 11px;
+  padding: 0 6px;
+}
+
+/* Episode search */
+.episode-search-wrap {
+  margin-bottom: 12px;
+}
+
+.episode-search {
+  background: var(--bg-surface);
+  border: 1px solid var(--border);
+  color: var(--text);
+  padding: 8px 12px;
+  border-radius: 6px;
+  font-size: 13px;
+  width: 100%;
+  max-width: 400px;
+}
+
+.episode-search::placeholder {
+  color: var(--text-muted);
+}
+
+/* History page */
+.history-group {
+  margin-bottom: 24px;
+}
+
+.history-date {
+  font-size: 14px;
+  color: var(--text-muted);
+  margin-bottom: 8px;
+  padding-bottom: 4px;
+  border-bottom: 1px solid var(--border);
+}
+
+.history-img {
+  width: 40px;
+  height: 40px;
+  border-radius: 6px;
+  object-fit: cover;
+  background: var(--bg-card);
+  flex-shrink: 0;
+}
+
+/* Discover page */
+.discover-categories {
+  display: flex;
+  gap: 8px;
+  margin-bottom: 20px;
+  flex-wrap: wrap;
+}
+
+.discover-card {
+  position: relative;
+}
+
+.discover-sub-btn {
+  margin-top: 6px;
+  width: 100%;
+}
+
+.discover-sub-btn.subscribed {
+  opacity: 0.6;
+  background: var(--bg-card);
+  border-color: var(--border);
+}
+
+/* Settings section */
+.settings-section {
+  margin-top: 16px;
+  padding-top: 16px;
+  border-top: 1px solid var(--border);
+}
+
+.settings-section h3 {
+  font-size: 14px;
+  margin-bottom: 8px;
+}
+
+/* Episode actions disabled state */
+.episode-actions button:disabled {
+  opacity: 0.4;
+  cursor: not-allowed;
 }

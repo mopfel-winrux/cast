@@ -34,6 +34,7 @@
   $:  played=?
       position=@ud
       downloaded=?
+      last-played=@da
   ==
 ::
 ::  playback queue
@@ -60,6 +61,7 @@
       cache=(map episode-id octs)
       current=(unit [=podcast-id =episode-id])
       archived=(set episode-id)
+      history=(list [timestamp=@da =podcast-id =episode-id])
   ==
 ::
 ::  poke actions

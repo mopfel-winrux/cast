@@ -5,9 +5,13 @@ const App = {
   currentPodcast: null,
   episodeFilter: 'all',
   showArchived: false,
+  episodeSearch: '',
+  pollTimer: null,
+  downloadedEpisodes: new Set(),
 
   async init() {
     Player.init();
+    await CastDownload.init();
     this.bindEvents();
     this.setupRouter();
     await this.loadPodcasts();
@@ -23,6 +27,7 @@ const App = {
     document.getElementById('refresh-all-btn').addEventListener('click', () => this.handleRefreshAll());
     document.getElementById('import-opml-btn').addEventListener('click', () => this.handleImportOpml());
     document.getElementById('upload-btn').addEventListener('click', () => this.handleUpload());
+    document.getElementById('export-opml-btn').addEventListener('click', () => this.handleExportOpml());
   },
 
   // Toast notifications
@@ -39,6 +44,16 @@ const App = {
     }, 3000);
   },
 
+  // Polling
+  startPolling(fn, interval) {
+    this.stopPolling();
+    this.pollTimer = setInterval(fn, interval);
+  },
+
+  stopPolling() {
+    if (this.pollTimer) { clearInterval(this.pollTimer); this.pollTimer = null; }
+  },
+
   // Router
   setupRouter() {
     window.addEventListener('hashchange', () => this.route());
@@ -52,9 +67,11 @@ const App = {
 
     document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
     document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    this.stopPolling();
 
     if (page === '' || page === 'home') {
       this.showPage('home');
+      this.startPolling(() => this.pollHome(), 30000);
     } else if (page === 'podcast' && parts[1]) {
       this.showPodcastDetail(parts[1]);
     } else if (page === 'episode' && parts[1] && parts[2]) {
@@ -62,10 +79,17 @@ const App = {
     } else if (page === 'queue') {
       this.showPage('queue');
       this.loadQueue();
+    } else if (page === 'history') {
+      this.showPage('history');
+      this.loadHistory();
     } else if (page === 'settings') {
       this.showPage('settings');
+      this.loadSettingsPage();
     } else if (page === 'add') {
       this.showPage('add');
+    } else if (page === 'discover') {
+      this.showPage('discover');
+      Discover.render();
     } else {
       this.showPage('home');
     }
@@ -75,6 +99,44 @@ const App = {
     document.getElementById(`page-${name}`).classList.add('active');
     const navLink = document.querySelector(`.nav-link[data-page="${name}"]`);
     if (navLink) navLink.classList.add('active');
+  },
+
+  // Home page polling
+  async pollHome() {
+    try {
+      const data = await CastAPI.getPodcasts();
+      const newPods = data.podcasts || [];
+      // Check if badge counts changed
+      const changed = newPods.length !== this.podcasts.length || newPods.some((p, i) => {
+        const old = this.podcasts.find(op => op.id === p.id);
+        return !old || old['unplayed-count'] !== p['unplayed-count'];
+      });
+      if (changed) {
+        this.podcasts = newPods;
+        this.renderPodcasts();
+        // Auto-download new episodes if enabled
+        if (localStorage.getItem('cast-auto-download') === 'true') {
+          this.autoDownloadNew(newPods);
+        }
+      }
+    } catch (e) { /* silent poll failure */ }
+  },
+
+  async autoDownloadNew(podcasts) {
+    for (const pod of podcasts) {
+      try {
+        const data = await CastAPI.getPodcast(pod.id);
+        const episodes = (data.episodes || [])
+          .filter(e => !e.archived && !e.played)
+          .sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0))
+          .slice(0, 3);
+        for (const ep of episodes) {
+          if (ep['audio-url'] && !this.downloadedEpisodes.has(ep['audio-url'])) {
+            CastDownload.download(ep['audio-url']).catch(console.error);
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }
   },
 
   // Podcast list
@@ -100,14 +162,20 @@ const App = {
     }
 
     empty.style.display = 'none';
-    grid.innerHTML = this.podcasts.map(p => `
-      <div class="podcast-card" onclick="App.navigateToPodcast('${p.id}')">
-        <img src="${this.escHtml(p['image-url'] || '')}" alt="${this.escHtml(p.title)}"
-             onerror="this.style.background='var(--bg-card)'; this.src=''">
-        <div class="title">${this.escHtml(p.title)}</div>
-        <div class="author">${this.escHtml(p.author || '')}</div>
-      </div>
-    `).join('');
+    grid.innerHTML = this.podcasts.map(p => {
+      const unplayed = p['unplayed-count'] || 0;
+      return `
+        <div class="podcast-card" onclick="App.navigateToPodcast('${p.id}')">
+          <div class="card-img-wrap">
+            <img src="${this.escHtml(p['image-url'] || '')}" alt="${this.escHtml(p.title)}"
+                 onerror="this.style.background='var(--bg-card)'; this.src=''">
+            ${unplayed > 0 ? `<span class="badge">${unplayed}</span>` : ''}
+          </div>
+          <div class="title">${this.escHtml(p.title)}</div>
+          <div class="author">${this.escHtml(p.author || '')}</div>
+        </div>
+      `;
+    }).join('');
   },
 
   navigateToPodcast(id) {
@@ -141,10 +209,25 @@ const App = {
     this.showPage('podcast');
     this.episodeFilter = 'all';
     this.showArchived = false;
+    this.episodeSearch = '';
     const detail = document.getElementById('podcast-detail');
     const list = document.getElementById('episode-list');
     detail.innerHTML = '<p class="loading">Loading...</p>';
     list.innerHTML = '';
+
+    // Start polling for this podcast
+    this.startPolling(async () => {
+      try {
+        const data = await CastAPI.getPodcast(id);
+        const oldCount = (this.currentPodcast?.episodes || []).length;
+        if ((data.episodes || []).length !== oldCount) {
+          this.currentPodcast = data;
+          const episodes = (data.episodes || []).slice();
+          episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+          this.renderEpisodes(episodes, id);
+        }
+      } catch (e) { /* silent */ }
+    }, 30000);
 
     try {
       const data = await CastAPI.getPodcast(id);
@@ -180,10 +263,14 @@ const App = {
             </div>
           </div>
         </div>
+        <div class="episode-search-wrap">
+          <input type="text" class="episode-search" placeholder="Search episodes..." oninput="App.handleEpisodeSearch(this.value)">
+        </div>
         <div class="episode-filters">
           <button class="filter-btn active" onclick="App.filterEpisodes('all', this)">All (${visible.length})</button>
           <button class="filter-btn" onclick="App.filterEpisodes('unplayed', this)">Unplayed (${visible.filter(e => !e.played).length})</button>
           <button class="filter-btn" onclick="App.filterEpisodes('in-progress', this)">In Progress (${visible.filter(e => e.position > 0 && !e.played).length})</button>
+          <button class="filter-btn" onclick="App.filterEpisodes('downloaded', this)">Downloaded</button>
           ${episodes.filter(e => e.archived).length > 0 ? `<button class="filter-btn" onclick="App.filterEpisodes('archived', this)">Archived (${episodes.filter(e => e.archived).length})</button>` : ''}
         </div>
       `;
@@ -193,6 +280,20 @@ const App = {
       detail.innerHTML = '<p>Failed to load podcast.</p>';
       console.error(e);
     }
+  },
+
+  // Episode search (debounced)
+  _searchTimeout: null,
+  handleEpisodeSearch(value) {
+    clearTimeout(this._searchTimeout);
+    this._searchTimeout = setTimeout(() => {
+      this.episodeSearch = value.trim().toLowerCase();
+      if (this.currentPodcast) {
+        const episodes = (this.currentPodcast.episodes || []).slice();
+        episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+        this.renderEpisodes(episodes, this.currentPodcast.id);
+      }
+    }, 200);
   },
 
   // Episode detail / show notes
@@ -213,6 +314,7 @@ const App = {
       this.currentPodcast = data;
       const es = { played: ep.played, position: ep.position || 0 };
       const img = ep['image-url'] || data['image-url'] || '';
+      const isDl = this.downloadedEpisodes.has(ep['audio-url']);
 
       detail.innerHTML = `
         <div class="episode-detail-header">
@@ -232,6 +334,9 @@ const App = {
               <button class="btn btn-small btn-outline" onclick="App.enqueueEpisode('${podcastId}', '${ep.id}')">+Q Queue</button>
               <button class="btn btn-small btn-outline" onclick="App.togglePlayed('${ep.id}', ${!es.played})">
                 ${es.played ? 'Mark unplayed' : 'Mark played'}
+              </button>
+              <button class="btn btn-small btn-outline" onclick="App.downloadEpisode('${ep['audio-url']}')" ${isDl ? 'disabled' : ''}>
+                ${isDl ? 'Downloaded' : '\u2913 Download'}
               </button>
             </div>
           </div>
@@ -261,8 +366,16 @@ const App = {
   renderEpisodes(episodes, podcastId) {
     const list = document.getElementById('episode-list');
     let filtered = episodes;
+
+    // Apply search filter
+    if (this.episodeSearch) {
+      filtered = filtered.filter(e => e.title.toLowerCase().includes(this.episodeSearch));
+    }
+
     if (this.episodeFilter === 'archived') {
       filtered = filtered.filter(e => e.archived);
+    } else if (this.episodeFilter === 'downloaded') {
+      filtered = filtered.filter(e => this.downloadedEpisodes.has(e['audio-url']));
     } else {
       // hide archived unless toggled
       if (!this.showArchived) {
@@ -280,28 +393,33 @@ const App = {
       return;
     }
 
-    list.innerHTML = filtered.map(ep => `
-      <div class="episode-item ${ep.played ? 'played' : ''} ${ep.archived ? 'archived' : ''}" data-eid="${ep.id}">
-        <div class="play-icon" onclick="App.playEpisode('${ep.id}')">&#9654;</div>
-        <div class="ep-info" onclick="window.location.hash='#/episode/${podcastId}/${ep.id}'">
-          <div class="ep-title">${this.escHtml(ep.title)}</div>
-          <div class="ep-meta">
-            ${this.formatDate(ep['pub-date'])}
-            ${ep.duration ? ' \u00b7 ' + Player.formatTime(ep.duration) : ''}
-            ${ep.position > 0 && !ep.played ? ' \u00b7 ' + Player.formatTime(ep.position) + ' played' : ''}
+    list.innerHTML = filtered.map(ep => {
+      const isDl = this.downloadedEpisodes.has(ep['audio-url']);
+      return `
+        <div class="episode-item ${ep.played ? 'played' : ''} ${ep.archived ? 'archived' : ''}" data-eid="${ep.id}">
+          <div class="play-icon" onclick="App.playEpisode('${ep.id}')">&#9654;</div>
+          <div class="ep-info" onclick="window.location.hash='#/episode/${podcastId}/${ep.id}'">
+            <div class="ep-title">${this.escHtml(ep.title)}</div>
+            <div class="ep-meta">
+              ${this.formatDate(ep['pub-date'])}
+              ${ep.duration ? ' \u00b7 ' + Player.formatTime(ep.duration) : ''}
+              ${ep.position > 0 && !ep.played ? ' \u00b7 ' + Player.formatTime(ep.position) + ' played' : ''}
+              ${isDl ? ' \u00b7 \u2913' : ''}
+            </div>
+          </div>
+          <div class="episode-actions">
+            <button onclick="App.downloadEpisode('${ep['audio-url']}')" title="Download" ${isDl ? 'disabled' : ''}>${isDl ? '\u2713' : '\u2913'}</button>
+            <button onclick="App.enqueueEpisode('${podcastId}', '${ep.id}')" title="Add to queue">+Q</button>
+            <button onclick="App.togglePlayed('${ep.id}', ${!ep.played})" title="Toggle played">
+              ${ep.played ? '\u21a9' : '\u2713'}
+            </button>
+            <button onclick="App.toggleArchived('${ep.id}', ${!ep.archived})" title="${ep.archived ? 'Unarchive' : 'Archive'}">
+              ${ep.archived ? '\u21a9A' : 'A'}
+            </button>
           </div>
         </div>
-        <div class="episode-actions">
-          <button onclick="App.enqueueEpisode('${podcastId}', '${ep.id}')" title="Add to queue">+Q</button>
-          <button onclick="App.togglePlayed('${ep.id}', ${!ep.played})" title="Toggle played">
-            ${ep.played ? '\u21a9' : '\u2713'}
-          </button>
-          <button onclick="App.toggleArchived('${ep.id}', ${!ep.archived})" title="${ep.archived ? 'Unarchive' : 'Archive'}">
-            ${ep.archived ? '\u21a9A' : 'A'}
-          </button>
-        </div>
-      </div>
-    `).join('');
+      `;
+    }).join('');
   },
 
   async handleRefreshPodcast(id) {
@@ -424,6 +542,69 @@ const App = {
     }
   },
 
+  // Download
+  async downloadEpisode(audioUrl) {
+    if (!audioUrl || this.downloadedEpisodes.has(audioUrl)) return;
+    this.toast('Downloading...');
+    try {
+      await CastDownload.download(audioUrl);
+      this.toast('Downloaded!', 'success');
+      // Re-render current view to update download indicators
+      if (this.currentPodcast) {
+        const episodes = (this.currentPodcast.episodes || []).slice();
+        episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+        this.renderEpisodes(episodes, this.currentPodcast.id);
+      }
+    } catch (e) {
+      console.error(e);
+      this.toast('Download failed', 'error');
+    }
+  },
+
+  // History
+  async loadHistory() {
+    const list = document.getElementById('history-list');
+    list.innerHTML = '<p class="loading">Loading...</p>';
+
+    try {
+      const data = await CastAPI.getHistory();
+      const history = data.history || [];
+
+      if (history.length === 0) {
+        list.innerHTML = '<p class="empty-state">No listening history yet.</p>';
+        return;
+      }
+
+      // Group by date
+      const groups = {};
+      history.forEach(item => {
+        const d = new Date(item.timestamp * 1000);
+        const key = d.toLocaleDateString('en-US', { month: 'long', day: 'numeric', year: 'numeric' });
+        if (!groups[key]) groups[key] = [];
+        groups[key].push(item);
+      });
+
+      list.innerHTML = Object.entries(groups).map(([date, items]) => `
+        <div class="history-group">
+          <h3 class="history-date">${date}</h3>
+          ${items.map(item => `
+            <div class="episode-item" onclick="window.location.hash='#/podcast/${item['podcast-id']}'">
+              <img class="history-img" src="${this.escHtml(item['image-url'] || '')}" alt=""
+                   onerror="this.style.background='var(--bg-card)'; this.src=''">
+              <div class="ep-info">
+                <div class="ep-title">${this.escHtml(item['episode-title'] || 'Unknown episode')}</div>
+                <div class="ep-meta">${this.escHtml(item['podcast-title'] || '')} &middot; ${new Date(item.timestamp * 1000).toLocaleTimeString('en-US', { hour: 'numeric', minute: '2-digit' })}</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+      `).join('');
+    } catch (e) {
+      console.error(e);
+      list.innerHTML = '<p class="empty-state">Failed to load history.</p>';
+    }
+  },
+
   // Queue
   async loadQueue() {
     try {
@@ -495,10 +676,20 @@ const App = {
     } catch (e) { console.error(e); }
   },
 
+  loadSettingsPage() {
+    // Load toggles from localStorage
+    document.getElementById('setting-autoplay-next').checked = localStorage.getItem('cast-autoplay-next') === 'true';
+    document.getElementById('setting-auto-download').checked = localStorage.getItem('cast-auto-download') === 'true';
+  },
+
   async handleSaveSettings() {
     const speed = parseInt(document.getElementById('setting-speed').value);
     const refresh = parseInt(document.getElementById('setting-refresh').value) * 3600;
     const autoDownload = document.getElementById('setting-autodownload').checked;
+
+    // Save localStorage settings
+    localStorage.setItem('cast-autoplay-next', document.getElementById('setting-autoplay-next').checked);
+    localStorage.setItem('cast-auto-download', document.getElementById('setting-auto-download').checked);
 
     try {
       await CastAPI.setSettings({
@@ -510,6 +701,24 @@ const App = {
     } catch (e) {
       console.error(e);
       this.toast('Failed to save settings', 'error');
+    }
+  },
+
+  // OPML Export
+  async handleExportOpml() {
+    try {
+      const xml = await CastAPI.getExportOpml();
+      const blob = new Blob([xml], { type: 'text/xml' });
+      const url = URL.createObjectURL(blob);
+      const a = document.createElement('a');
+      a.href = url;
+      a.download = 'cast-subscriptions.opml';
+      a.click();
+      URL.revokeObjectURL(url);
+      this.toast('Exported!', 'success');
+    } catch (e) {
+      console.error(e);
+      this.toast('Failed to export', 'error');
     }
   },
 

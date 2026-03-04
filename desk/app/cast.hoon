@@ -81,7 +81,7 @@
         `this
       %-  (slog leaf+"cast: fetching feed {(trip url.act)}" ~)
       :_  this
-      :~  :*  %pass  /fetch/subscribe/(scot %uv pid)
+      :~  :*  %pass  /fetch/subscribe/(scot %uv pid)/(scot %t url.act)
               %arvo  %i
               %request
               [%'GET' url.act ~ ~]
@@ -148,6 +148,7 @@
       =/  es=episode-state:cast
         (fall (~(get by estate) eid) *episode-state:cast)
       =.  played.es  played.act
+      =?  last-played.es  played.act  now.bowl
       =/  upd=update:cast  [%played-updated eid played.act]
       :_  this(estate (~(put by estate) eid es))
       :~  [%give %fact ~[/updates] cast-update+!>(upd)]
@@ -177,6 +178,11 @@
         %set-current
       =/  cur=[podcast-id:cast episode-id:cast]
         [podcast-id.act episode-id.act]
+      =/  hist-entry=[timestamp=@da =podcast-id:cast =episode-id:cast]
+        [now.bowl podcast-id.act episode-id.act]
+      =/  new-hist=(list [timestamp=@da =podcast-id:cast =episode-id:cast])
+        [hist-entry history]
+      =.  history  (scag 100 new-hist)
       =/  upd=update:cast  [%current-updated `cur]
       :_  this(current `cur)
       :~  [%give %fact ~[/updates] cast-update+!>(upd)]
@@ -238,7 +244,7 @@
       =/  pid=podcast-id:cast  (sham url)
       ?:  (~(has by podcasts) pid)  ~
       %-  some
-      :*  %pass  /fetch/subscribe/(scot %uv pid)
+      :*  %pass  /fetch/subscribe/(scot %uv pid)/(scot %t url)
           %arvo  %i
           %request
           [%'GET' url ~ ~]
@@ -365,6 +371,16 @@
           :-  %a
           %+  turn  ~(tap by podcasts)
           |=  [pid=podcast-id:cast pod=podcast:cast]
+          =/  eps=(map episode-id:cast episode:cast)
+            (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
+          =/  ep-list=(list [episode-id:cast episode:cast])  ~(tap by eps)
+          =/  visible=(list [episode-id:cast episode:cast])
+            (skip ep-list |=([eid=episode-id:cast *] (~(has in archived) eid)))
+          =/  unplayed=@ud
+            %-  lent
+            %+  skip  visible
+            |=  [eid=episode-id:cast *]
+            played:(fall (~(get by estate) eid) *episode-state:cast)
           %-  pairs:enjs:format
           :~  ['id' s+(scot %uv pid)]
               ['title' s+title.pod]
@@ -373,6 +389,8 @@
               ['image-url' s+image-url.pod]
               ['link' s+link.pod]
               ['feed-url' s+feed-url.pod]
+              ['episode-count' (numb:enjs:format (lent visible))]
+              ['unplayed-count' (numb:enjs:format unplayed)]
           ==
       ==
     ::
@@ -482,6 +500,54 @@
           ['refresh-interval' (numb:enjs:format (div refresh-interval.settings ~s1))]
       ==
     ::
+        [%history ~]
+      %-  json-response:gen:server
+      %-  pairs:enjs:format
+      :~  :-  'history'
+          :-  %a
+          %+  turn  (scag 50 history)
+          |=  [ts=@da pid=podcast-id:cast eid=episode-id:cast]
+          =/  pod=(unit podcast:cast)  (~(get by podcasts) pid)
+          =/  ep-map=(unit (map episode-id:cast episode:cast))  (~(get by episodes) pid)
+          =/  ep=(unit episode:cast)
+            ?~  ep-map  ~
+            (~(get by u.ep-map) eid)
+          %-  pairs:enjs:format
+          :~  ['timestamp' (sect:enjs:format ts)]
+              ['podcast-id' s+(scot %uv pid)]
+              ['episode-id' s+(scot %uv eid)]
+              ['podcast-title' s+?~(pod '' title.u.pod)]
+              ['episode-title' s+?~(ep '' title.u.ep)]
+              ['image-url' s+?~(pod '' image-url.u.pod)]
+          ==
+      ==
+    ::
+        [%'export-opml' ~]
+      =/  pods=(list [podcast-id:cast podcast:cast])  ~(tap by podcasts)
+      =/  outlines=tape
+        %-  zing
+        %+  turn  pods
+        |=  [pid=podcast-id:cast pod=podcast:cast]
+        ;:  welp
+          "<outline type=\"rss\" text=\""
+          (escape-xml (trip title.pod))
+          "\" title=\""
+          (escape-xml (trip title.pod))
+          "\" xmlUrl=\""
+          (escape-xml (trip feed-url.pod))
+          "\" />"
+        ==
+      =/  xml-tape=tape
+        ;:  welp
+          "<?xml version=\"1.0\" encoding=\"UTF-8\"?>"
+          "<opml version=\"2.0\">"
+          "<head><title>Cast Subscriptions</title></head>"
+          "<body>"
+          outlines
+          "</body></opml>"
+        ==
+      [[200 ['content-type' 'text/xml']~] `(as-octs:mimes:html (crip xml-tape))]
+    ::
         [%'s3-config' ~]
       ::  read credentials and configuration from %storage agent
       =/  cred-upd=update:storage
@@ -498,6 +564,21 @@
           ['bucket' s+current-bucket.configuration.conf-upd]
           ['region' s+region.configuration.conf-upd]
       ==
+    ==
+  ::
+  ++  escape-xml
+    |=  t=tape
+    ^-  tape
+    %-  zing
+    %+  turn  t
+    |=  c=@
+    ^-  tape
+    ?+  c  [c ~]
+      %'&'   "&amp;"
+      %'<'   "&lt;"
+      %'>'   "&gt;"
+      %'"'   "&quot;"
+      %'\''  "&apos;"
     ==
   ::
   ++  handle-poke
@@ -633,11 +714,23 @@
             :-  %a
             %+  turn  ~(tap by podcasts)
             |=  [pid=podcast-id:cast pod=podcast:cast]
+            =/  eps=(map episode-id:cast episode:cast)
+              (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
+            =/  ep-list=(list [episode-id:cast episode:cast])  ~(tap by eps)
+            =/  visible=(list [episode-id:cast episode:cast])
+              (skip ep-list |=([eid=episode-id:cast *] (~(has in archived) eid)))
+            =/  unplayed=@ud
+              %-  lent
+              %+  skip  visible
+              |=  [eid=episode-id:cast *]
+              played:(fall (~(get by estate) eid) *episode-state:cast)
             %-  pairs:enjs:format
             :~  ['id' s+(scot %uv pid)]
                 ['title' s+title.pod]
                 ['author' s+author.pod]
                 ['image-url' s+image-url.pod]
+                ['episode-count' (numb:enjs:format (lent visible))]
+                ['unplayed-count' (numb:enjs:format unplayed)]
             ==
         ==
       ``json+!>(json)
@@ -684,13 +777,13 @@
         *outbound-config:iris
     ==
   ::
-      [%fetch %subscribe pid=@ ~]
+      [%fetch %subscribe pid=@ url=@ ~]
     ?>  ?=([%iris %http-response *] sign-arvo)
-    (handle-feed-response (slav %uv pid.pole) client-response.sign-arvo %.y)
+    (handle-feed-response (slav %uv pid.pole) client-response.sign-arvo %.y `(slav %t url.pole))
   ::
       [%fetch %refresh pid=@ ~]
     ?>  ?=([%iris %http-response *] sign-arvo)
-    (handle-feed-response (slav %uv pid.pole) client-response.sign-arvo %.n)
+    (handle-feed-response (slav %uv pid.pole) client-response.sign-arvo %.n ~)
   ::
       [%fetch %download pid=@ eid=@ ~]
     ?>  ?=([%iris %http-response *] sign-arvo)
@@ -698,7 +791,7 @@
   ==
   ::
   ++  handle-feed-response
-    |=  [pid=podcast-id:cast resp=client-response:iris is-new=?]
+    |=  [pid=podcast-id:cast resp=client-response:iris is-new=? orig-url=(unit @t)]
     ^-  (quip card _this)
     ?.  ?=(%finished -.resp)
       %-  (slog leaf+"cast: unexpected response type" ~)
@@ -707,7 +800,8 @@
       %-  (slog leaf+"cast: empty response body" ~)
       `this
     =/  body=@t  q.data.u.full-file.resp
-    =/  result  (parse-feed:rss '' body)
+    =/  feed-url=@t  (fall orig-url '')
+    =/  result  (parse-feed:rss feed-url body)
     ?~  result
       %-  (slog leaf+"cast: failed to parse feed" ~)
       `this

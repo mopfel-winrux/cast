@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cast - Podcast Player</title>
-  <link rel="stylesheet" href="/apps/cast/css/app.css?v=6">
+  <link rel="stylesheet" href="/apps/cast/css/app.css?v=7">
 </head>
 <body>
   <div id="app">
@@ -12,8 +12,10 @@
       <div class="nav-brand">Cast</div>
       <a href="#/" class="nav-link active" data-page="home">Podcasts</a>
       <a href="#/queue" class="nav-link" data-page="queue">Queue</a>
+      <a href="#/history" class="nav-link" data-page="history">History</a>
       <a href="#/settings" class="nav-link" data-page="settings">Settings</a>
       <a href="#/add" class="nav-link" data-page="add">+ Add</a>
+      <a href="#/discover" class="nav-link" data-page="discover">Discover</a>
     </nav>
     <main id="content">
       <div id="page-home" class="page active">
@@ -38,6 +40,10 @@
         <div id="queue-list"></div>
         <p id="queue-empty" class="empty-state">Queue is empty.</p>
       </div>
+      <div id="page-history" class="page">
+        <h1>History</h1>
+        <div id="history-list"></div>
+      </div>
       <div id="page-settings" class="page">
         <h1>Settings</h1>
         <div class="settings-form">
@@ -61,9 +67,21 @@
           </label>
           <label class="checkbox-label">
             <input type="checkbox" id="setting-autodownload">
-            Auto-download new episodes
+            Auto-download new episodes (server)
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="setting-autoplay-next">
+            Auto-play next episode
+          </label>
+          <label class="checkbox-label">
+            <input type="checkbox" id="setting-auto-download">
+            Auto-download new episodes (browser cache)
           </label>
           <button id="save-settings" class="btn">Save Settings</button>
+          <div class="settings-section">
+            <h3>Subscriptions</h3>
+            <button id="export-opml-btn" class="btn btn-small btn-outline">Export Subscriptions (OPML)</button>
+          </div>
         </div>
       </div>
       <div id="page-add" class="page">
@@ -87,6 +105,7 @@
           <div id="upload-progress" class="help-text" style="margin-top:8px"></div>
         </div>
       </div>
+      <div id="page-discover" class="page"></div>
     </main>
   </div>
   <div id="player-bar" class="player-bar hidden">
@@ -116,12 +135,21 @@
       <option value="2">2x</option>
       <option value="3">3x</option>
     </select>
+    <select id="sleep-timer" class="speed-select" title="Sleep timer">
+      <option value="0">Sleep</option>
+      <option value="15">15m</option>
+      <option value="30">30m</option>
+      <option value="45">45m</option>
+      <option value="60">60m</option>
+      <option value="90">90m</option>
+    </select>
   </div>
   <div id="toast-container"></div>
   <audio id="audio-element"></audio>
-  <script src="/apps/cast/js/api.js?v=6"></script>
-  <script src="/apps/cast/js/s3.js?v=6"></script>
-  <script src="/apps/cast/js/player.js?v=6"></script>
-  <script src="/apps/cast/js/app.js?v=6"></script>
+  <script src="/apps/cast/js/api.js?v=7"></script>
+  <script src="/apps/cast/js/s3.js?v=7"></script>
+  <script src="/apps/cast/js/player.js?v=7"></script>
+  <script src="/apps/cast/js/discover.js?v=7"></script>
+  <script src="/apps/cast/js/app.js?v=7"></script>
 </body>
 </html>

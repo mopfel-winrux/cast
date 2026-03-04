@@ -5,6 +5,9 @@ const Player = {
   currentEpisode: null,
   currentPodcast: null,
   saveInterval: null,
+  sleepTimeout: null,
+  sleepEndTime: null,
+  sleepCountdown: null,
 
   init() {
     this.audio = document.getElementById('audio-element');
@@ -14,6 +17,7 @@ const Player = {
     this.currentTimeEl = document.getElementById('current-time');
     this.totalTimeEl = document.getElementById('total-time');
     this.speedSelect = document.getElementById('player-speed');
+    this.sleepSelect = document.getElementById('sleep-timer');
 
     // Event listeners
     this.playPauseBtn.addEventListener('click', () => this.togglePlay());
@@ -30,6 +34,8 @@ const Player = {
       this.audio.playbackRate = parseFloat(this.speedSelect.value);
     });
 
+    this.sleepSelect.addEventListener('change', () => this.setSleepTimer());
+
     this.audio.addEventListener('timeupdate', () => this.updateProgress());
     this.audio.addEventListener('ended', () => this.onEnded());
     this.audio.addEventListener('loadedmetadata', () => {
@@ -37,11 +43,13 @@ const Player = {
     });
   },
 
-  play(episode, podcast) {
+  async play(episode, podcast) {
     this.currentEpisode = episode;
     this.currentPodcast = podcast;
 
-    this.audio.src = episode['audio-url'];
+    // Check browser cache first
+    const audioUrl = await CastDownload.getUrl(episode['audio-url']);
+    this.audio.src = audioUrl;
 
     // Resume from saved position after audio loads
     if (episode.position && episode.position > 0) {
@@ -89,6 +97,7 @@ const Player = {
     } else {
       this.audio.pause();
       this.playPauseBtn.innerHTML = '&#9654;';
+      this.clearSleepTimer();
     }
   },
 
@@ -110,8 +119,39 @@ const Player = {
     CastAPI.setPosition(this.currentEpisode.id, this.audio.currentTime).catch(console.error);
   },
 
+  // Sleep timer
+  setSleepTimer() {
+    this.clearSleepTimer();
+    const minutes = parseInt(this.sleepSelect.value);
+    if (!minutes) return;
+
+    this.sleepEndTime = Date.now() + minutes * 60 * 1000;
+    this.sleepTimeout = setTimeout(() => {
+      this.audio.pause();
+      this.playPauseBtn.innerHTML = '&#9654;';
+      this.clearSleepTimer();
+      App.toast('Sleep timer ended');
+    }, minutes * 60 * 1000);
+
+    this.sleepCountdown = setInterval(() => {
+      const remaining = Math.max(0, this.sleepEndTime - Date.now());
+      const mins = Math.ceil(remaining / 60000);
+      if (mins <= 0) {
+        this.clearSleepTimer();
+      }
+    }, 60000);
+  },
+
+  clearSleepTimer() {
+    if (this.sleepTimeout) { clearTimeout(this.sleepTimeout); this.sleepTimeout = null; }
+    if (this.sleepCountdown) { clearInterval(this.sleepCountdown); this.sleepCountdown = null; }
+    this.sleepEndTime = null;
+    if (this.sleepSelect) this.sleepSelect.value = '0';
+  },
+
   async onEnded() {
     this.savePosition();
+    this.clearSleepTimer();
     if (this.currentEpisode) {
       CastAPI.setPlayed(this.currentEpisode.id, true).catch(console.error);
     }
@@ -140,6 +180,25 @@ const Player = {
         return;
       }
     } catch (e) { console.error('Queue advance failed:', e); }
+
+    // Auto-play next episode from same podcast
+    if (localStorage.getItem('cast-autoplay-next') === 'true' && this.currentPodcast && this.currentEpisode) {
+      try {
+        const data = await CastAPI.getPodcast(this.currentPodcast.id);
+        const episodes = (data.episodes || [])
+          .filter(e => !e.archived)
+          .sort((a, b) => (a['pub-date'] || 0) - (b['pub-date'] || 0));
+        const curIdx = episodes.findIndex(e => e.id === this.currentEpisode.id);
+        if (curIdx >= 0 && curIdx < episodes.length - 1) {
+          const next = episodes[curIdx + 1];
+          if (!next.played) {
+            this.play(next, this.currentPodcast);
+            return;
+          }
+        }
+      } catch (e) { console.error('Auto-play next failed:', e); }
+    }
+
     this.playPauseBtn.innerHTML = '&#9654;';
   },
 
@@ -159,6 +218,64 @@ const Player = {
 
   destroy() {
     if (this.saveInterval) clearInterval(this.saveInterval);
+    this.clearSleepTimer();
     this.savePosition();
+  }
+};
+
+// Browser Cache API for offline episode storage
+const CastDownload = {
+  CACHE_NAME: 'cast-audio',
+  downloading: new Set(),
+
+  async init() {
+    // Populate downloaded set from cache keys
+    try {
+      const cache = await caches.open(this.CACHE_NAME);
+      const keys = await cache.keys();
+      App.downloadedEpisodes = new Set(keys.map(r => r.url));
+    } catch (e) { /* Cache API not available */ }
+  },
+
+  async download(url, onProgress) {
+    if (this.downloading.has(url)) return;
+    this.downloading.add(url);
+    try {
+      const resp = await fetch(url);
+      if (!resp.ok) throw new Error('Download failed');
+      const cache = await caches.open(this.CACHE_NAME);
+      await cache.put(url, resp);
+      App.downloadedEpisodes.add(url);
+    } finally {
+      this.downloading.delete(url);
+    }
+  },
+
+  async isDownloaded(url) {
+    try {
+      const cache = await caches.open(this.CACHE_NAME);
+      const match = await cache.match(url);
+      return !!match;
+    } catch (e) { return false; }
+  },
+
+  async getUrl(originalUrl) {
+    try {
+      const cache = await caches.open(this.CACHE_NAME);
+      const match = await cache.match(originalUrl);
+      if (match) {
+        const blob = await match.blob();
+        return URL.createObjectURL(blob);
+      }
+    } catch (e) { /* fall through */ }
+    return originalUrl;
+  },
+
+  async remove(url) {
+    try {
+      const cache = await caches.open(this.CACHE_NAME);
+      await cache.delete(url);
+      App.downloadedEpisodes.delete(url);
+    } catch (e) { /* ignore */ }
   }
 };

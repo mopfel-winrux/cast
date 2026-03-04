@@ -32,6 +32,13 @@ const CastAPI = {
   getQueue() { return this.get('queue'); },
   getPlayer() { return this.get('player'); },
   getSettings() { return this.get('settings'); },
+  getHistory() { return this.get('history'); },
+
+  async getExportOpml() {
+    const res = await fetch(`${this.base}/export-opml`, { credentials: 'include' });
+    if (!res.ok) throw new Error(`API error: ${res.status}`);
+    return res.text();
+  },
 
   subscribe(url) {
     return this.poke({ action: 'subscribe', url });
