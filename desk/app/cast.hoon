@@ -550,19 +550,27 @@
     ::
         [%'s3-config' ~]
       ::  read credentials and configuration from %storage agent
-      =/  cred-upd=update:storage
-        !<(update:storage .^(^vase %gx /(scot %p our.bowl)/storage/(scot %da now.bowl)/credentials/storage-update))
-      =/  conf-upd=update:storage
-        !<(update:storage .^(^vase %gx /(scot %p our.bowl)/storage/(scot %da now.bowl)/configuration/storage-update))
-      ?>  ?=(%credentials -.cred-upd)
-      ?>  ?=(%configuration -.conf-upd)
+      ::  scry as json to avoid cross-desk type mismatch
+      ::  json shape: {"storage-update":{"credentials":{...}}}
+      =/  cred-json=json
+        .^(json %gx /(scot %p our.bowl)/storage/(scot %da now.bowl)/credentials/json)
+      =/  conf-json=json
+        .^(json %gx /(scot %p our.bowl)/storage/(scot %da now.bowl)/configuration/json)
+      =/  get-str
+        |=  [=json keys=(list @t)]
+        ^-  @t
+        ?~  keys  ?:(?=([%s *] json) p.json '')
+        ?.  ?=([%o *] json)  ''
+        =/  v  (~(get by p.json) i.keys)
+        ?~  v  ''
+        $(json u.v, keys t.keys)
       %-  json-response:gen:server
       %-  pairs:enjs:format
-      :~  ['endpoint' s+endpoint.credentials.cred-upd]
-          ['accessKeyId' s+access-key-id.credentials.cred-upd]
-          ['secretAccessKey' s+secret-access-key.credentials.cred-upd]
-          ['bucket' s+current-bucket.configuration.conf-upd]
-          ['region' s+region.configuration.conf-upd]
+      :~  ['endpoint' s+(get-str cred-json ~['storage-update' 'credentials' 'endpoint'])]
+          ['accessKeyId' s+(get-str cred-json ~['storage-update' 'credentials' 'accessKeyId'])]
+          ['secretAccessKey' s+(get-str cred-json ~['storage-update' 'credentials' 'secretAccessKey'])]
+          ['bucket' s+(get-str conf-json ~['storage-update' 'configuration' 'currentBucket'])]
+          ['region' s+(get-str conf-json ~['storage-update' 'configuration' 'region'])]
       ==
     ==
   ::
