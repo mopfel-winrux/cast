@@ -1,6 +1,7 @@
-::  rss: RSS 2.0 feed parser
+::  rss: RSS 2.0 + Atom feed parser
 ::
-::  parses RSS XML into podcast metadata and episode list
+::  parses RSS XML and Atom XML into podcast metadata and episode list
+::  supports YouTube Atom feeds (yt: and media: namespaces)
 ::  uses de-xml:html from zuse
 ::
 /-  cast
@@ -15,7 +16,8 @@
   =/  parsed=(unit manx)  (de-xml:html xml)
   ?~  parsed  ~
   =/  channel=(unit manx)  (find-tag 'channel' c.u.parsed)
-  ?~  channel  ~
+  ?~  channel
+    (parse-atom-feed url u.parsed)
   =/  pod=podcast:cast
     :*  feed-url=url
         title=(get-text 'title' c.u.channel)
@@ -159,6 +161,18 @@
   ?~  node  ''
   $(tags t.tags, children c.u.node)
 ::
+::  +digits: parse one or more decimal digits, allowing leading zeros
+::
+::    dim:ag rejects leading zeros (e.g. "03" fails).
+::    this parser accepts them, needed for zero-padded date fields.
+::
+++  digits
+  %+  cook
+    |=  a=(list @)
+    %+  roll  a
+    |=([i=@ a=@] (add (mul a 10) i))
+  (plus sid:ab)
+::
 ::  +parse-rfc2822: parse RFC 2822 date string to @da
 ::
 ::    format: "Mon, 01 Jan 2024 00:00:00 GMT"
@@ -186,12 +200,12 @@
     %+  rust  t
     ;~  sfix
       ;~  plug
-        dim:ag
+        digits
         ;~(pfix ace mon-to-num)
-        ;~(pfix ace dim:ag)
-        ;~(pfix ace dim:ag)
-        ;~(pfix col dim:ag)
-        ;~(pfix col dim:ag)
+        ;~(pfix ace digits)
+        ;~(pfix ace digits)
+        ;~(pfix col digits)
+        ;~(pfix col digits)
       ==
       (star next)
     ==
@@ -236,16 +250,111 @@
     ~
   ?~  colons
     ::  plain seconds
-    (rush dur dim:ag)
+    (rush dur digits)
   ?~  t.colons
     ::  mm:ss
-    =/  parsed  (rust t ;~(plug dim:ag ;~(pfix col dim:ag)))
+    =/  parsed  (rust t ;~(plug digits ;~(pfix col digits)))
     ?~  parsed  ~
     =/  [m=@ud s=@ud]  u.parsed
     `(add (mul m 60) s)
   ::  hh:mm:ss
-  =/  parsed  (rust t ;~(plug dim:ag ;~(pfix col dim:ag) ;~(pfix col dim:ag)))
+  =/  parsed  (rust t ;~(plug digits ;~(pfix col digits) ;~(pfix col digits)))
   ?~  parsed  ~
   =/  [h=@ud m=@ud s=@ud]  u.parsed
   `:(add (mul h 3.600) (mul m 60) s)
+::
+::  +parse-atom-feed: parse Atom XML feed (e.g. YouTube) into podcast + episodes
+::
+::    maps Atom <feed>/<entry> structure to Cast podcast/episode types
+::
+++  parse-atom-feed
+  |=  [url=@t feed=manx]
+  ^-  (unit [=podcast:cast eps=(list [episode-id:cast episode:cast])])
+  =/  kids=marl  c.feed
+  =/  pod=podcast:cast
+    :*  feed-url=url
+        title=(get-text 'title' kids)
+        author=(get-text-from-path ~['author' 'name'] kids)
+        description=''
+        image-url=''
+        link=(fall (get-link-href 'alternate' kids) '')
+        last-fetched=*@da
+    ==
+  =/  entries=(list manx)  (find-tags 'entry' kids)
+  =/  eps=(list [episode-id:cast episode:cast])
+    %+  turn  entries
+    |=  entry=manx
+    ^-  [episode-id:cast episode:cast]
+    =/  guid=@t  (get-text 'yt:videoId' c.entry)
+    =/  ep=episode:cast
+      :*  title=(get-text 'title' c.entry)
+          description=(get-text-from-path ~['media:group' 'media:description'] c.entry)
+          audio-url=(fall (get-link-href 'alternate' c.entry) '')
+          pub-date=(fall (parse-iso8601 (get-text 'published' c.entry)) *@da)
+          duration=0
+          guid=guid
+          image-url=(fall (get-attr-text 'media:thumbnail' 'url' (find-media-group c.entry)) '')
+      ==
+    =/  eid=episode-id:cast  (sham guid)
+    [eid ep]
+  ::  use first episode thumbnail as podcast image if none set
+  =/  pod-img=@t
+    ?~  eps  ''
+    image-url:+.i.eps
+  =.  image-url.pod  pod-img
+  `[pod eps]
+::
+::  +find-media-group: get children of media:group element
+::
+++  find-media-group
+  |=  children=marl
+  ^-  marl
+  =/  mg=(unit manx)  (find-tag 'media:group' children)
+  ?~  mg  ~
+  c.u.mg
+::
+::  +get-link-href: get href attribute from <link> with matching rel
+::
+::    Atom <link> elements are self-closing with rel and href attributes.
+::    finds first <link rel=rel-val> and returns its href.
+::
+++  get-link-href
+  |=  [rel-val=@t children=marl]
+  ^-  (unit @t)
+  ?~  children  ~
+  ?.  (match-tag 'link' i.children)
+    $(children t.children)
+  =/  rel=(unit @t)  (get-attr 'rel' a.g.i.children)
+  ?~  rel  $(children t.children)
+  ?.  =(rel-val u.rel)
+    $(children t.children)
+  (get-attr 'href' a.g.i.children)
+::
+::  +parse-iso8601: parse ISO 8601 date string to @da
+::
+::    format: "2026-03-04T18:00:48+00:00"
+::    parses YYYY-MM-DDTHH:MM:SS, ignores timezone suffix (treats as UTC)
+::
+++  parse-iso8601
+  |=  dat=@t
+  ^-  (unit @da)
+  ?:  =('' dat)  ~
+  =/  t=tape  (trip dat)
+  =/  parsed
+    %+  rust  t
+    ;~  sfix
+      ;~  plug
+        digits                       ::  year
+        ;~(pfix hep digits)          ::  month
+        ;~(pfix hep digits)          ::  day
+        ;~(pfix (jest 'T') digits)   ::  hour
+        ;~(pfix col digits)          ::  minute
+        ;~(pfix col digits)          ::  second
+      ==
+      (star next)                    ::  ignore timezone
+    ==
+  ?~  parsed  ~
+  =/  [yr=@ud mn=@ud dy=@ud hr=@ud mi=@ud sc=@ud]
+    u.parsed
+  `(year [[%.y yr] mn [dy hr mi sc ~]])
 --

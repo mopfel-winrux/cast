@@ -16,7 +16,7 @@
 =|  state-0:cast
 =*  state  -
 =*  archived  archived.state
-%+  verb  &
+%+  verb  |
 ^-  agent:gall
 |_  =bowl:gall
 +*  this   .

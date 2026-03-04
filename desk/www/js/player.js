@@ -43,9 +43,61 @@ const Player = {
     });
   },
 
+  isYouTubeUrl(url) {
+    return url && (url.includes('youtube.com/watch') || url.includes('youtu.be/'));
+  },
+
+  getYouTubeId(url) {
+    if (!url) return null;
+    const match = url.match(/[?&]v=([^&]+)/) || url.match(/youtu\.be\/([^?&]+)/);
+    return match ? match[1] : null;
+  },
+
+  showYouTubeEmbed(videoId) {
+    let container = document.getElementById('youtube-embed');
+    if (!container) {
+      container = document.createElement('div');
+      container.id = 'youtube-embed';
+      document.getElementById('content').appendChild(container);
+    }
+    container.innerHTML = `<div class="yt-embed-wrap">
+      <button class="yt-close" onclick="Player.hideYouTubeEmbed()">&times;</button>
+      <iframe src="https://www.youtube.com/embed/${videoId}?autoplay=1"
+        frameborder="0" allow="autoplay; encrypted-media" allowfullscreen></iframe>
+    </div>`;
+    container.classList.add('active');
+  },
+
+  hideYouTubeEmbed() {
+    const container = document.getElementById('youtube-embed');
+    if (container) {
+      container.classList.remove('active');
+      container.innerHTML = '';
+    }
+  },
+
   async play(episode, podcast) {
     this.currentEpisode = episode;
     this.currentPodcast = podcast;
+
+    // YouTube URLs — embed the video
+    if (this.isYouTubeUrl(episode['audio-url'])) {
+      this.audio.pause();
+      this.audio.src = '';
+      const videoId = this.getYouTubeId(episode['audio-url']);
+      if (videoId) {
+        this.showYouTubeEmbed(videoId);
+      }
+      this.show(episode, podcast);
+      if (podcast && episode) {
+        CastAPI.setCurrent(podcast.id, episode.id).catch(console.error);
+        CastAPI.setPlayed(episode.id, true).catch(console.error);
+      }
+      return;
+    }
+
+    // Non-YouTube: hide any embed
+    this.hideYouTubeEmbed();
 
     // Check browser cache first
     const audioUrl = await CastDownload.getUrl(episode['audio-url']);
