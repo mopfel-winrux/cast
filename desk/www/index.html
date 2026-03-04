@@ -4,7 +4,7 @@
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0">
   <title>Cast - Podcast Player</title>
-  <link rel="stylesheet" href="/apps/cast/css/app.css?v=5">
+  <link rel="stylesheet" href="/apps/cast/css/app.css?v=6">
 </head>
 <body>
   <div id="app">
@@ -28,6 +28,10 @@
         <button class="back-btn" onclick="window.location.hash='#/'">&larr; Back</button>
         <div id="podcast-detail"></div>
         <div id="episode-list"></div>
+      </div>
+      <div id="page-episode" class="page">
+        <button class="back-btn" id="episode-back-btn">&larr; Back</button>
+        <div id="episode-detail"></div>
       </div>
       <div id="page-queue" class="page">
         <h1>Queue</h1>
@@ -115,9 +119,9 @@
   </div>
   <div id="toast-container"></div>
   <audio id="audio-element"></audio>
-  <script src="/apps/cast/js/api.js?v=5"></script>
-  <script src="/apps/cast/js/s3.js?v=5"></script>
-  <script src="/apps/cast/js/player.js?v=5"></script>
-  <script src="/apps/cast/js/app.js?v=5"></script>
+  <script src="/apps/cast/js/api.js?v=6"></script>
+  <script src="/apps/cast/js/s3.js?v=6"></script>
+  <script src="/apps/cast/js/player.js?v=6"></script>
+  <script src="/apps/cast/js/app.js?v=6"></script>
 </body>
 </html>

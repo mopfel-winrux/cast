@@ -57,6 +57,8 @@ const App = {
       this.showPage('home');
     } else if (page === 'podcast' && parts[1]) {
       this.showPodcastDetail(parts[1]);
+    } else if (page === 'episode' && parts[1] && parts[2]) {
+      this.showEpisodeDetail(parts[1], parts[2]);
     } else if (page === 'queue') {
       this.showPage('queue');
       this.loadQueue();
@@ -193,6 +195,58 @@ const App = {
     }
   },
 
+  // Episode detail / show notes
+  async showEpisodeDetail(podcastId, episodeId) {
+    this.showPage('episode');
+    const detail = document.getElementById('episode-detail');
+    const backBtn = document.getElementById('episode-back-btn');
+    backBtn.onclick = () => { window.location.hash = `#/podcast/${podcastId}`; };
+    detail.innerHTML = '<p class="loading">Loading...</p>';
+
+    try {
+      const data = await CastAPI.getPodcast(podcastId);
+      const ep = (data.episodes || []).find(e => e.id === episodeId);
+      if (!ep) {
+        detail.innerHTML = '<p>Episode not found.</p>';
+        return;
+      }
+      this.currentPodcast = data;
+      const es = { played: ep.played, position: ep.position || 0 };
+      const img = ep['image-url'] || data['image-url'] || '';
+
+      detail.innerHTML = `
+        <div class="episode-detail-header">
+          <img src="${this.escHtml(img)}" alt=""
+               onerror="this.style.background='var(--bg-card)'; this.src=''">
+          <div class="episode-detail-info">
+            <div class="episode-detail-podcast">${this.escHtml(data.title)}</div>
+            <h2>${this.escHtml(ep.title)}</h2>
+            <div class="episode-detail-meta">
+              ${this.formatDate(ep['pub-date'])}
+              ${ep.duration ? ' &middot; ' + Player.formatTime(ep.duration) : ''}
+              ${es.position > 0 && !es.played ? ' &middot; ' + Player.formatTime(es.position) + ' played' : ''}
+              ${es.played ? ' &middot; Played' : ''}
+            </div>
+            <div class="episode-detail-actions">
+              <button class="btn btn-small" onclick="App.playEpisode('${ep.id}')">&#9654; Play</button>
+              <button class="btn btn-small btn-outline" onclick="App.enqueueEpisode('${podcastId}', '${ep.id}')">+Q Queue</button>
+              <button class="btn btn-small btn-outline" onclick="App.togglePlayed('${ep.id}', ${!es.played})">
+                ${es.played ? 'Mark unplayed' : 'Mark played'}
+              </button>
+            </div>
+          </div>
+        </div>
+        <div class="show-notes">
+          <h3>Show Notes</h3>
+          <div class="show-notes-content">${ep.description || '<p class="empty-state">No show notes available.</p>'}</div>
+        </div>
+      `;
+    } catch (e) {
+      detail.innerHTML = '<p>Failed to load episode.</p>';
+      console.error(e);
+    }
+  },
+
   filterEpisodes(filter, btn) {
     this.episodeFilter = filter;
     document.querySelectorAll('.filter-btn').forEach(b => b.classList.remove('active'));
@@ -229,7 +283,7 @@ const App = {
     list.innerHTML = filtered.map(ep => `
       <div class="episode-item ${ep.played ? 'played' : ''} ${ep.archived ? 'archived' : ''}" data-eid="${ep.id}">
         <div class="play-icon" onclick="App.playEpisode('${ep.id}')">&#9654;</div>
-        <div class="ep-info" onclick="App.playEpisode('${ep.id}')">
+        <div class="ep-info" onclick="window.location.hash='#/episode/${podcastId}/${ep.id}'">
           <div class="ep-title">${this.escHtml(ep.title)}</div>
           <div class="ep-meta">
             ${this.formatDate(ep['pub-date'])}
