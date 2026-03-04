@@ -146,9 +146,8 @@
     :_  this(cash (~(put in cash) url.request))
     %+  snoc  serve
     (store url.request ~ auth=| %payload pay)
-  ::TODO  configurable auth requirement
-  :: ?.  authenticated
-  ::   [[403 ~] `(as-octs:mimes:html 'unauthenticated')]
+  ?.  authenticated
+    [| [403 ~] `(as-octs:mimes:html 'unauthenticated')]
   ?.  ?=(%'GET' method.request)
     [| [405 ~] `(as-octs:mimes:html 'read-only resource')]
   =+  ^-  [[ext=(unit @ta) site=(list @t)] args=(list [key=@t value=@t])]
