@@ -10,7 +10,8 @@
   <link rel="manifest" href="/apps/cast/manifest.json">
   <link rel="apple-touch-icon" href="/apps/cast/icon.svg">
   <title>Cast - Podcast Player</title>
-  <link rel="stylesheet" href="/apps/cast/css/app.css?v=9">
+  <link rel="stylesheet" href="/apps/cast/css/app.css?v=10">
+  <link rel="stylesheet" href="/apps/cast/css/app-light.css?v=10" id="theme-light" disabled>
 </head>
 <body>
   <div id="app">
@@ -82,6 +83,13 @@
             <input type="checkbox" id="setting-auto-download">
             Auto-download new episodes (browser cache)
           </label>
+          <label>
+            Theme
+            <select id="setting-theme">
+              <option value="dark">Dark</option>
+              <option value="light">Light</option>
+            </select>
+          </label>
           <button id="save-settings" class="btn">Save Settings</button>
           <div class="settings-section">
             <h3>Subscriptions</h3>
@@ -152,11 +160,11 @@
   </div>
   <div id="toast-container"></div>
   <audio id="audio-element"></audio>
-  <script src="/apps/cast/js/api.js?v=9"></script>
-  <script src="/apps/cast/js/s3.js?v=9"></script>
-  <script src="/apps/cast/js/player.js?v=9"></script>
-  <script src="/apps/cast/js/discover.js?v=9"></script>
-  <script src="/apps/cast/js/app.js?v=9"></script>
+  <script src="/apps/cast/js/api.js?v=10"></script>
+  <script src="/apps/cast/js/s3.js?v=10"></script>
+  <script src="/apps/cast/js/player.js?v=10"></script>
+  <script src="/apps/cast/js/discover.js?v=10"></script>
+  <script src="/apps/cast/js/app.js?v=10"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/apps/cast/sw.js', { scope: '/apps/cast/' });

@@ -13,6 +13,7 @@ const App = {
   async init() {
     Player.init();
     await CastDownload.init();
+    this.loadTheme();
     this.bindEvents();
     this.setupRouter();
     await this.loadPodcasts();
@@ -29,6 +30,23 @@ const App = {
     document.getElementById('import-opml-btn').addEventListener('click', () => this.handleImportOpml());
     document.getElementById('upload-btn').addEventListener('click', () => this.handleUpload());
     document.getElementById('export-opml-btn').addEventListener('click', () => this.handleExportOpml());
+  },
+
+  loadTheme() {
+    const theme = localStorage.getItem('cast-theme') || 'dark';
+    this.applyTheme(theme);
+  },
+
+  applyTheme(theme) {
+    const lightSheet = document.getElementById('theme-light');
+    const meta = document.querySelector('meta[name="theme-color"]');
+    if (theme === 'light') {
+      lightSheet.disabled = false;
+      if (meta) meta.content = '#f5f5f7';
+    } else {
+      lightSheet.disabled = true;
+      if (meta) meta.content = '#1a1a2e';
+    }
   },
 
   // Toast notifications
@@ -683,6 +701,7 @@ const App = {
     // Load toggles from localStorage
     document.getElementById('setting-autoplay-next').checked = localStorage.getItem('cast-autoplay-next') === 'true';
     document.getElementById('setting-auto-download').checked = localStorage.getItem('cast-auto-download') === 'true';
+    document.getElementById('setting-theme').value = localStorage.getItem('cast-theme') || 'dark';
   },
 
   async handleSaveSettings() {
@@ -693,6 +712,9 @@ const App = {
     // Save localStorage settings
     localStorage.setItem('cast-autoplay-next', document.getElementById('setting-autoplay-next').checked);
     localStorage.setItem('cast-auto-download', document.getElementById('setting-auto-download').checked);
+    const theme = document.getElementById('setting-theme').value;
+    localStorage.setItem('cast-theme', theme);
+    this.applyTheme(theme);
 
     try {
       await CastAPI.setSettings({
