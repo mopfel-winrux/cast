@@ -165,10 +165,11 @@ const App = {
     empty.style.display = 'none';
     grid.innerHTML = this.podcasts.map(p => {
       const unplayed = p['unplayed-count'] || 0;
+      const img = p['image-url'] || '/apps/cast/upload-icon.svg';
       return `
         <div class="podcast-card" onclick="App.navigateToPodcast('${p.id}')">
           <div class="card-img-wrap">
-            <img src="${this.escHtml(p['image-url'] || '')}" alt="${this.escHtml(p.title)}"
+            <img src="${this.escHtml(img)}" alt="${this.escHtml(p.title)}"
                  onerror="this.style.background='var(--bg-card)'; this.src=''">
             ${unplayed > 0 ? `<span class="badge">${unplayed}</span>` : ''}
           </div>
