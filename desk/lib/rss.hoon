@@ -13,8 +13,14 @@
 ++  parse-feed
   |=  [url=@t xml=@t]
   ^-  (unit [=podcast:cast eps=(list [episode-id:cast episode:cast])])
-  =/  parsed=(unit manx)  (de-xml:html (sanitize-xml xml))
-  ?~  parsed  ~
+  %-  (slog leaf+"rss: sanitizing xml ({(a-co:co (met 3 xml))} bytes)" ~)
+  =/  clean=@t  (sanitize-xml xml)
+  %-  (slog leaf+"rss: sanitized ({(a-co:co (met 3 clean))} bytes), running de-xml" ~)
+  =/  parsed=(unit manx)  (de-xml:html clean)
+  ?~  parsed
+    %-  (slog leaf+"rss: de-xml failed for {(trip url)}" ~)
+    ~
+  %-  (slog leaf+"rss: de-xml succeeded, finding channel" ~)
   =/  channel=(unit manx)  (find-tag 'channel' c.u.parsed)
   ?~  channel
     (parse-atom-feed url u.parsed)
@@ -416,18 +422,26 @@
 ++  fix-tag-hyphens
   |=  in=tape
   ^-  tape
-  ::  state: 0=text 1=cdata 2=tag-name 3=tag-body 4=dquote 5=squote
+  ::  state: 0=text 1=cdata 2=tag-name 3=tag-body 4=dquote 5=squote 6=comment
   =/  s=@ud  0
   |-
   ?~  in  ~
   ?:  =(0 s)  ::  text
     ?.  =('<' i.in)
       [i.in $(in t.in)]
-    ::  check for CDATA start: <![CDATA[
-    ?:  ?&  ?=(^ t.in)
-            =('!' i.t.in)
+    ::  check for CDATA start: <![
+    ?:  ?&  ?=(^ t.in)      =('!' i.t.in)
+            ?=(^ t.t.in)    =('[' i.t.t.in)
         ==
       [i.in $(in t.in, s 1)]
+    ::  check for comment start: <!-
+    ?:  ?&  ?=(^ t.in)      =('!' i.t.in)
+            ?=(^ t.t.in)    =('-' i.t.t.in)
+        ==
+      [i.in $(in t.in, s 6)]
+    ::  other <! (DOCTYPE etc): pass through in text mode
+    ?:  ?&  ?=(^ t.in)  =('!' i.t.in)  ==
+      [i.in $(in t.in)]
     [i.in $(in t.in, s 2)]
   ?:  =(1 s)  ::  cdata — pass through until ]]>
     ?:  ?&  =(']' i.in)
@@ -460,6 +474,13 @@
     [i.in $(in t.in)]
   ?:  =(5 s)  ::  single-quoted attr value
     ?:  =('\'' i.in)   [i.in $(in t.in, s 3)]
+    [i.in $(in t.in)]
+  ?:  =(6 s)  ::  comment — pass through until -->
+    ?:  ?&  =('-' i.in)
+            ?=(^ t.in)  =('-' i.t.in)
+            ?=(^ t.t.in)  =('>' i.t.t.in)
+        ==
+      ['-' ['-' ['>' $(in t.t.t.in, s 0)]]]
     [i.in $(in t.in)]
   [i.in $(in t.in)]
 --

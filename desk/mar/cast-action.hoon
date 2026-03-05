@@ -89,6 +89,26 @@
     ::
         %'unarchive-all'
       [%unarchive-all ((ot ~[podcast-id+(se %uv)]) jon)]
+    ::
+        %'reorder-queue'
+      =/  order=(list [podcast-id:cast episode-id:cast])
+        ((ot ~[order+(ar (ot ~[podcast-id+(se %uv) episode-id+(se %uv)]))]) jon)
+      [%reorder-queue order]
+    ::
+        %'mark-before-played'
+      =/  f  (ot ~[podcast-id+(se %uv) date+ni])
+      =/  [pid=@uv d=@ud]  (f jon)
+      [%mark-before-played pid (add ~1970.1.1 (mul ~s1 d))]
+    ::
+        %'set-podcast-speed'
+      =/  f  (ot ~[podcast-id+(se %uv) speed+ni])
+      =/  [pid=@uv spd=@ud]  (f jon)
+      [%set-podcast-speed pid spd]
+    ::
+        %'reorder-podcasts'
+      =/  order=(list podcast-id:cast)
+        ((ot ~[order+(ar (se %uv))]) jon)
+      [%reorder-podcasts order]
     ==
   --
 ++  grad  %noun

@@ -188,7 +188,7 @@
         .^(=tube:clay %cc (scot %p our.bowl) q.byk.bowl (scot %da now.bowl) /html/mime)
     =+  !<(=mime (tube file))
     :_  `q.mime
-    [200 ['content-type' 'text/html']~]
+    [200 ['content-type' 'text/html'] ['cache-control' 'no-cache'] ~]
   =/  =path
     :*  (scot %p our.bowl)
         q.byk.bowl
@@ -204,9 +204,22 @@
   =+  ~|  [%no-mime-conversion from=u.ext]
       .^(=tube:clay %cc (scot %p our.bowl) q.byk.bowl (scot %da now.bowl) /[u.ext]/mime)
   =+  !<(=mime (tube file))
+  =/  content-type=@t  (rsh 3^1 (spat p.mime))
+  =/  cache-val=@t
+    ?+  u.ext  'max-age=3600'
+      %css  'max-age=3600'
+      %js   ?:  =('sw' (rear (slag (lent woot) site)))
+              'no-cache'
+            'max-age=3600'
+      %svg  'max-age=86400'
+      %png  'max-age=86400'
+      %jpg  'max-age=86400'
+      %ico  'max-age=86400'
+      %html  'no-cache'
+      %json  'no-cache'
+    ==
   :_  `q.mime
-  ::TODO  cache headers?
-  [200 ['content-type' (rsh 3^1 (spat p.mime))]~]
+  [200 ['content-type' content-type] ['cache-control' cache-val] ~]
 ::
 ++  on-watch
   |=  =path

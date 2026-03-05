@@ -10,11 +10,12 @@
 +$  versioned-state
   $%  state-0:cast
       state-1:cast
+      state-2:cast
   ==
 --
 ::
 %-  agent:dbug
-=|  state-1:cast
+=|  state-2:cast
 =*  state  -
 =*  archived  archived.state
 %+  verb  |
@@ -37,14 +38,30 @@
   =/  old  !<(versioned-state vase)
   :-  ~
   ?-  -.old
-      %1  this(state old)
+      %2  this(state old)
+      %1
+    %=  this
+      state  :*  %2
+        podcasts.old  episodes.old  estate.old
+        queue.old  settings.old  cache.old
+        current.old  archived.old  history.old
+        feed-hashes.old
+        *(map @t @t)
+        *(map podcast-id:cast @ud)
+        *(list podcast-id:cast)
+      ==
+    ==
+  ::
       %0
     %=  this
-      state  :*  %1
+      state  :*  %2
         podcasts.old  episodes.old  estate.old
         queue.old  settings.old  cache.old
         current.old  archived.old  history.old
         *(map podcast-id:cast @uvH)
+        *(map @t @t)
+        *(map podcast-id:cast @ud)
+        *(list podcast-id:cast)
       ==
     ==
   ==
@@ -112,6 +129,7 @@
             podcasts  (~(del by podcasts) pid)
             episodes  (~(del by episodes) pid)
             archived  (~(dif in archived) eids)
+            podcast-order  (skip podcast-order |=(p=podcast-id:cast =(p pid)))
           ==
       :~  [%give %fact ~[/updates] cast-update+!>(upd)]
       ==
@@ -327,6 +345,45 @@
       =/  eids=(set episode-id:cast)  ~(key by eps)
       :_  this(archived (~(dif in archived) eids))
       ~
+    ::
+        %reorder-queue
+      =.  queue  order.act
+      =/  upd=update:cast  [%queue-updated queue]
+      :_  this
+      :~  [%give %fact ~[/updates] cast-update+!>(upd)]
+      ==
+    ::
+        %mark-before-played
+      =/  pid  podcast-id.act
+      =/  cutoff=@da  before.act
+      =/  eps=(map episode-id:cast episode:cast)
+        (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
+      =/  ep-list=(list [eid=episode-id:cast ep=episode:cast])  ~(tap by eps)
+      =/  new-estate=(map episode-id:cast episode-state:cast)  estate
+      |-
+      ?~  ep-list
+        =/  upd=update:cast  [%bulk-played-updated pid %.y]
+        :_  this(estate new-estate)
+        :~  [%give %fact ~[/updates] cast-update+!>(upd)]
+        ==
+      ?.  (lth pub-date.ep.i.ep-list cutoff)
+        $(ep-list t.ep-list)
+      =/  es=episode-state:cast
+        (fall (~(get by new-estate) eid.i.ep-list) *episode-state:cast)
+      =.  played.es  %.y
+      %=  $
+        new-estate  (~(put by new-estate) eid.i.ep-list es)
+        ep-list     t.ep-list
+      ==
+    ::
+        %set-podcast-speed
+      =/  pid  podcast-id.act
+      =.  podcast-speeds  (~(put by podcast-speeds) pid speed.act)
+      `this
+    ::
+        %reorder-podcasts
+      =.  podcast-order  order.act
+      `this
     ==
   ::
   ::  HTTP request handling
@@ -375,11 +432,27 @@
       not-found:gen:server
     ::
         [%podcasts ~]
+      =/  all-pods=(list [podcast-id:cast podcast:cast])  ~(tap by podcasts)
+      ::  sort by podcast-order if set, unordered ones go at end
+      =/  ordered-pods=(list [podcast-id:cast podcast:cast])
+        ?~  podcast-order  all-pods
+        =/  pod-map=(map podcast-id:cast podcast:cast)  podcasts
+        =/  in-order=(list [podcast-id:cast podcast:cast])
+          %+  murn  podcast-order
+          |=  pid=podcast-id:cast
+          =/  pod=(unit podcast:cast)  (~(get by pod-map) pid)
+          ?~  pod  ~
+          `[pid u.pod]
+        =/  order-set=(set podcast-id:cast)
+          (~(gas in *(set podcast-id:cast)) podcast-order)
+        =/  rest=(list [podcast-id:cast podcast:cast])
+          (skip all-pods |=([pid=podcast-id:cast *] (~(has in order-set) pid)))
+        (welp in-order rest)
       %-  json-response:gen:server
       %-  pairs:enjs:format
       :~  :-  'podcasts'
           :-  %a
-          %+  turn  ~(tap by podcasts)
+          %+  turn  ordered-pods
           |=  [pid=podcast-id:cast pod=podcast:cast]
           =/  eps=(map episode-id:cast episode:cast)
             (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
@@ -535,6 +608,26 @@
               ['episode-title' s+?~(ep '' title.u.ep)]
               ['image-url' s+?~(pod '' image-url.u.pod)]
           ==
+      ==
+    ::
+        [%'podcast-speeds' ~]
+      %-  json-response:gen:server
+      %-  pairs:enjs:format
+      :~  :-  'speeds'
+          %-  pairs:enjs:format
+          %+  turn  ~(tap by podcast-speeds)
+          |=  [pid=podcast-id:cast spd=@ud]
+          [(scot %uv pid) (numb:enjs:format spd)]
+      ==
+    ::
+        [%'feed-errors' ~]
+      %-  json-response:gen:server
+      %-  pairs:enjs:format
+      :~  :-  'errors'
+          %-  pairs:enjs:format
+          %+  turn  ~(tap by feed-errors)
+          |=  [url=@t msg=@t]
+          [url s+msg]
       ==
     ::
         [%'export-opml' ~]
@@ -719,6 +812,26 @@
         ::
             %'unarchive-all'
           [%unarchive-all ((ot ~[podcast-id+(se %uv)]) jon)]
+        ::
+            %'reorder-queue'
+          =/  order=(list [podcast-id:cast episode-id:cast])
+            ((ot ~[order+(ar (ot ~[podcast-id+(se %uv) episode-id+(se %uv)]))]) jon)
+          [%reorder-queue order]
+        ::
+            %'mark-before-played'
+          =/  f  (ot ~[podcast-id+(se %uv) date+ni])
+          =/  [pid=@uv d=@ud]  (f jon)
+          [%mark-before-played pid (add ~1970.1.1 (mul ~s1 d))]
+        ::
+            %'set-podcast-speed'
+          =/  f  (ot ~[podcast-id+(se %uv) speed+ni])
+          =/  [pid=@uv spd=@ud]  (f jon)
+          [%set-podcast-speed pid spd]
+        ::
+            %'reorder-podcasts'
+          =/  order=(list podcast-id:cast)
+            ((ot ~[order+(ar (se %uv))]) jon)
+          [%reorder-podcasts order]
         ==
       --
     --
@@ -807,6 +920,7 @@
   ::
       [%fetch %subscribe pid=@ url=@ ~]
     ?>  ?=([%iris %http-response *] sign-arvo)
+    %-  (slog leaf+"cast: got iris response on subscribe wire" ~)
     (handle-feed-response (slav %uv pid.pole) client-response.sign-arvo %.y `(slav %t url.pole))
   ::
       [%fetch %refresh pid=@ ~]
@@ -854,12 +968,19 @@
               *outbound-config:iris
           ==
       ==
+    =/  err-url=@t
+      ?^  orig-url  u.orig-url
+      =/  pod=(unit podcast:cast)  (~(get by podcasts) pid)
+      ?~  pod  ''
+      feed-url.u.pod
     ?.  =(200 code)
       %-  (slog leaf+"cast: got HTTP {(a-co:co code)} for {(trip feed-url)}" ~)
-      `this
+      ?:  =('' err-url)  `this
+      `this(feed-errors (~(put by feed-errors) err-url (crip "HTTP {(a-co:co code)}")))
     ?~  full-file.resp
       %-  (slog leaf+"cast: empty response for {(trip feed-url)}" ~)
-      `this
+      ?:  =('' err-url)  `this
+      `this(feed-errors (~(put by feed-errors) err-url 'Empty response'))
     =/  body=@t  q.data.u.full-file.resp
     ::  hash body and skip parsing if unchanged
     =/  body-hash=@uvH  (sham body)
@@ -871,17 +992,24 @@
       %-  (slog leaf+"cast: feed unchanged for {(trip feed-url)}, skipping parse" ~)
       `this
     =.  feed-hashes  (~(put by feed-hashes) pid body-hash)
-    =/  clean=@t  (sanitize-xml:rss body)
-    =/  dexml=(unit manx)  (de-xml:html clean)
-    ?~  dexml
-      %-  (slog leaf+"cast: de-xml failed for {(trip feed-url)}" ~)
-      `this
+    %-  (slog leaf+"cast: parsing feed {(trip feed-url)} ({(a-co:co (met 3 body))} bytes)" ~)
     =/  result  (parse-feed:rss feed-url body)
     ?~  result
       %-  (slog leaf+"cast: parse-feed failed for {(trip feed-url)}" ~)
-      `this
+      ?:  =('' err-url)  `this
+      `this(feed-errors (~(put by feed-errors) err-url 'Feed parse failed'))
     =/  [pod=podcast:cast eps=(list [episode-id:cast episode:cast])]
       u.result
+    ::  clear feed error on success
+    =?  feed-errors  ?=(^ orig-url)
+      (~(del by feed-errors) u.orig-url)
+    ::  also clear by existing podcast's feed-url for refresh case
+    =/  existing-feed-url=(unit @t)
+      =/  ep=(unit podcast:cast)  (~(get by podcasts) pid)
+      ?~  ep  ~
+      `feed-url.u.ep
+    =?  feed-errors  ?=(^ existing-feed-url)
+      (~(del by feed-errors) u.existing-feed-url)
     ::  preserve feed-url from existing podcast if refreshing
     =/  existing-pod=(unit podcast:cast)  (~(get by podcasts) pid)
     =?  feed-url.pod  ?=(^ existing-pod)
@@ -902,6 +1030,7 @@
     =.  episodes  (~(put by episodes) pid all-eps)
     ?:  is-new
       %-  (slog leaf+"cast: subscribed to {(trip title.pod)} ({(a-co:co (lent eps))} episodes)" ~)
+      =.  podcast-order  (snoc podcast-order pid)
       =/  upd=update:cast  [%podcast-added pid pod eps]
       :_  this
       :~  [%give %fact ~[/updates] cast-update+!>(upd)]

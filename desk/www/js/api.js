@@ -117,5 +117,25 @@ const CastAPI = {
 
   unarchiveAll(podcastId) {
     return this.poke({ action: 'unarchive-all', 'podcast-id': podcastId });
+  },
+
+  reorderQueue(order) {
+    return this.poke({ action: 'reorder-queue', order });
+  },
+
+  getFeedErrors() { return this.get('feed-errors'); },
+
+  markBeforePlayed(podcastId, date) {
+    return this.poke({ action: 'mark-before-played', 'podcast-id': podcastId, date });
+  },
+
+  getPodcastSpeeds() { return this.get('podcast-speeds'); },
+
+  setPodcastSpeed(podcastId, speed) {
+    return this.poke({ action: 'set-podcast-speed', 'podcast-id': podcastId, speed });
+  },
+
+  reorderPodcasts(order) {
+    return this.poke({ action: 'reorder-podcasts', order });
   }
 };

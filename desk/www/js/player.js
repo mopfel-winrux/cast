@@ -8,6 +8,7 @@ const Player = {
   sleepTimeout: null,
   sleepEndTime: null,
   sleepCountdown: null,
+  podcastSpeeds: {},
 
   init() {
     this.audio = document.getElementById('audio-element');
@@ -31,7 +32,14 @@ const Player = {
     });
 
     this.speedSelect.addEventListener('change', () => {
-      this.audio.playbackRate = parseFloat(this.speedSelect.value);
+      const speed = parseFloat(this.speedSelect.value);
+      this.audio.playbackRate = speed;
+      // Save per-podcast speed to backend
+      if (this.currentPodcast && this.currentPodcast.id) {
+        const speedInt = Math.round(speed * 100);
+        this.podcastSpeeds[this.currentPodcast.id] = speedInt;
+        CastAPI.setPodcastSpeed(this.currentPodcast.id, speedInt).catch(console.error);
+      }
     });
 
     this.sleepSelect.addEventListener('change', () => this.setSleepTimer());
@@ -40,6 +48,89 @@ const Player = {
     this.audio.addEventListener('ended', () => this.onEnded());
     this.audio.addEventListener('loadedmetadata', () => {
       this.totalTimeEl.textContent = this.formatTime(this.audio.duration);
+    });
+
+    // Keyboard shortcuts
+    document.addEventListener('keydown', (e) => {
+      const tag = (e.target.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'select' || tag === 'textarea') return;
+      switch (e.key) {
+        case ' ':
+          e.preventDefault();
+          this.togglePlay();
+          break;
+        case 'ArrowLeft':
+          this.skip(-15);
+          break;
+        case 'ArrowRight':
+          this.skip(30);
+          break;
+        case 'm':
+          if (this.audio.src) this.audio.muted = !this.audio.muted;
+          break;
+      }
+    });
+
+    // MediaSession API
+    this.setupMediaSession();
+
+    // Load per-podcast speeds from backend
+    this.loadPodcastSpeeds();
+  },
+
+  async loadPodcastSpeeds() {
+    try {
+      const data = await CastAPI.getPodcastSpeeds();
+      this.podcastSpeeds = data.speeds || {};
+    } catch (e) { /* ignore */ }
+  },
+
+  setupMediaSession() {
+    if (!('mediaSession' in navigator)) return;
+    navigator.mediaSession.setActionHandler('play', () => {
+      this.audio.play();
+      this.playPauseBtn.innerHTML = '&#9646;&#9646;';
+      navigator.mediaSession.playbackState = 'playing';
+    });
+    navigator.mediaSession.setActionHandler('pause', () => {
+      this.audio.pause();
+      this.playPauseBtn.innerHTML = '&#9654;';
+      navigator.mediaSession.playbackState = 'paused';
+    });
+    navigator.mediaSession.setActionHandler('seekbackward', () => this.skip(-15));
+    navigator.mediaSession.setActionHandler('seekforward', () => this.skip(30));
+    navigator.mediaSession.setActionHandler('nexttrack', async () => {
+      // Play next in queue
+      try {
+        const data = await CastAPI.getQueue();
+        const queue = data.queue || [];
+        if (queue.length > 0) {
+          const next = queue[0];
+          const ep = {
+            id: next['episode-id'], title: next.title || '',
+            'audio-url': next['audio-url'] || '', 'image-url': next['image-url'] || '', position: 0
+          };
+          const pod = {
+            id: next['podcast-id'], title: next['podcast-title'] || '',
+            'image-url': next['podcast-image'] || ''
+          };
+          this.play(ep, pod);
+        }
+      } catch (e) { console.error('nexttrack failed:', e); }
+    });
+  },
+
+  updateMediaSession() {
+    if (!('mediaSession' in navigator) || !this.currentEpisode) return;
+    const ep = this.currentEpisode;
+    const pod = this.currentPodcast;
+    const artwork = [];
+    const imgUrl = ep['image-url'] || (pod ? pod['image-url'] : '');
+    if (imgUrl) artwork.push({ src: imgUrl, sizes: '512x512', type: 'image/png' });
+    navigator.mediaSession.metadata = new MediaMetadata({
+      title: ep.title || '',
+      artist: pod ? pod.title : '',
+      artwork: artwork
     });
   },
 
@@ -113,8 +204,18 @@ const Player = {
       this.audio.addEventListener('loadedmetadata', onLoaded);
     }
 
+    // Restore per-podcast speed or fallback to global
+    if (podcast && podcast.id && this.podcastSpeeds[podcast.id]) {
+      const speed = this.podcastSpeeds[podcast.id] / 100;
+      this.audio.playbackRate = speed;
+      this.speedSelect.value = speed;
+    } else {
+      this.audio.playbackRate = parseFloat(this.speedSelect.value);
+    }
+
     this.audio.play();
     this.show(episode, podcast);
+    this.updateMediaSession();
 
     // Save position periodically
     if (this.saveInterval) clearInterval(this.saveInterval);
@@ -146,9 +247,11 @@ const Player = {
     if (this.audio.paused) {
       this.audio.play();
       this.playPauseBtn.innerHTML = '&#9646;&#9646;';
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     } else {
       this.audio.pause();
       this.playPauseBtn.innerHTML = '&#9654;';
+      if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
       this.clearSleepTimer();
     }
   },
@@ -164,6 +267,15 @@ const Player = {
     this.seekBar.value = pct;
     this.currentTimeEl.textContent = this.formatTime(this.audio.currentTime);
     this.totalTimeEl.textContent = this.formatTime(this.audio.duration);
+    if ('mediaSession' in navigator) {
+      try {
+        navigator.mediaSession.setPositionState({
+          duration: this.audio.duration,
+          playbackRate: this.audio.playbackRate,
+          position: this.audio.currentTime
+        });
+      } catch (e) { /* ignore */ }
+    }
   },
 
   savePosition() {

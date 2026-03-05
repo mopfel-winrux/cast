@@ -6,9 +6,11 @@ const App = {
   episodeFilter: 'all',
   showArchived: false,
   episodeSearch: '',
+  podcastSearch: '',
   episodeSortAsc: false,
   pollTimer: null,
   downloadedEpisodes: new Set(),
+  feedErrors: {},
 
   async init() {
     Player.init();
@@ -18,6 +20,15 @@ const App = {
     this.setupRouter();
     await this.loadPodcasts();
     await this.loadSettings();
+    this.loadFeedErrors();
+  },
+
+  async loadFeedErrors() {
+    try {
+      const data = await CastAPI.getFeedErrors();
+      this.feedErrors = data.errors || {};
+      this.renderPodcasts();
+    } catch (e) { /* ignore */ }
   },
 
   bindEvents() {
@@ -170,6 +181,15 @@ const App = {
     }
   },
 
+  _podSearchTimeout: null,
+  handlePodcastSearch(value) {
+    clearTimeout(this._podSearchTimeout);
+    this._podSearchTimeout = setTimeout(() => {
+      this.podcastSearch = value.trim().toLowerCase();
+      this.renderPodcasts();
+    }, 200);
+  },
+
   renderPodcasts() {
     const grid = document.getElementById('podcast-grid');
     const empty = document.getElementById('empty-state');
@@ -180,26 +200,94 @@ const App = {
       return;
     }
 
+    let filtered = this.podcasts;
+    if (this.podcastSearch) {
+      filtered = filtered.filter(p =>
+        (p.title || '').toLowerCase().includes(this.podcastSearch) ||
+        (p.author || '').toLowerCase().includes(this.podcastSearch)
+      );
+    }
+
+    if (filtered.length === 0) {
+      grid.innerHTML = '';
+      empty.style.display = 'block';
+      empty.textContent = 'No podcasts match your search.';
+      return;
+    }
+
     empty.style.display = 'none';
-    grid.innerHTML = this.podcasts.map(p => {
+    grid.innerHTML = filtered.map((p, i) => {
       const unplayed = p['unplayed-count'] || 0;
       const img = p['image-url'] || '/apps/cast/upload-icon.svg';
+      const hasError = p['feed-url'] && this.feedErrors[p['feed-url']];
       return `
-        <div class="podcast-card" onclick="App.navigateToPodcast('${p.id}')">
+        <div class="podcast-card" data-pi="${i}" data-pid="${p.id}">
           <div class="card-img-wrap">
-            <img src="${this.escHtml(img)}" alt="${this.escHtml(p.title)}"
+            <span class="pod-drag-handle" draggable="true" title="Drag to reorder">&#9776;</span>
+            <img src="${this.escHtml(img)}" alt="${this.escHtml(p.title)}" draggable="false"
                  onerror="this.style.background='var(--bg-card)'; this.src=''">
             ${unplayed > 0 ? `<span class="badge">${unplayed}</span>` : ''}
+            ${hasError ? '<span class="feed-error-badge" title="Feed error">&#9888;</span>' : ''}
           </div>
           <div class="title">${this.escHtml(p.title)}</div>
           <div class="author">${this.escHtml(p.author || '')}</div>
         </div>
       `;
     }).join('');
+    this.setupPodcastDrag(grid, filtered);
   },
 
   navigateToPodcast(id) {
     window.location.hash = `#/podcast/${id}`;
+  },
+
+  setupPodcastDrag(grid, podcasts) {
+    let dragIdx = null;
+    let dragCard = null;
+    // Click on card (but not handle) navigates
+    grid.querySelectorAll('.podcast-card').forEach(el => {
+      el.addEventListener('click', (e) => {
+        if (e.target.closest('.pod-drag-handle')) return;
+        this.navigateToPodcast(el.dataset.pid);
+      });
+    });
+    // Drag starts from the handle element
+    grid.querySelectorAll('.pod-drag-handle').forEach(handle => {
+      handle.addEventListener('dragstart', (e) => {
+        dragCard = handle.closest('.podcast-card');
+        dragIdx = parseInt(dragCard.dataset.pi);
+        dragCard.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+        e.dataTransfer.setDragImage(dragCard, 60, 60);
+      });
+      handle.addEventListener('dragend', () => {
+        if (dragCard) dragCard.classList.remove('dragging');
+        grid.querySelectorAll('.drag-over-card').forEach(d => d.classList.remove('drag-over-card'));
+        dragIdx = null;
+        dragCard = null;
+      });
+    });
+    // Drop targets are the cards
+    grid.querySelectorAll('.podcast-card').forEach(el => {
+      el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        grid.querySelectorAll('.drag-over-card').forEach(d => d.classList.remove('drag-over-card'));
+        if (dragCard && el !== dragCard) el.classList.add('drag-over-card');
+      });
+      el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        if (dragIdx === null) return;
+        const dropIdx = parseInt(el.dataset.pi);
+        if (dragIdx === dropIdx) return;
+        const arr = podcasts.slice();
+        const [moved] = arr.splice(dragIdx, 1);
+        arr.splice(dropIdx, 0, moved);
+        this.podcasts = arr;
+        this.renderPodcasts();
+        CastAPI.reorderPodcasts(arr.map(p => p.id)).catch(console.error);
+      });
+    });
   },
 
   // Refresh all feeds
@@ -212,6 +300,7 @@ const App = {
       this.toast('Refreshing all feeds...');
       setTimeout(async () => {
         await this.loadPodcasts();
+        this.loadFeedErrors();
         btn.textContent = 'Refresh';
         btn.disabled = false;
         this.toast('Feeds refreshed', 'success');
@@ -256,7 +345,9 @@ const App = {
       this.sortEpisodes(episodes);
       const visible = episodes.filter(e => !e.archived);
 
+      const feedErr = data['feed-url'] ? this.feedErrors[data['feed-url']] : null;
       detail.innerHTML = `
+        ${feedErr ? `<div class="feed-error-banner">&#9888; Last refresh failed: ${this.escHtml(feedErr)}</div>` : ''}
         <div class="podcast-header">
           <img src="${this.escHtml(data['image-url'] || '')}" alt=""
                onerror="this.style.background='var(--bg-card)'; this.src=''">
@@ -272,6 +363,7 @@ const App = {
                 <div class="hamburger-dropdown">
                   <button onclick="App.markAllPlayed('${id}')">Mark all as played</button>
                   <button onclick="App.markAllUnplayed('${id}')">Mark all as unplayed</button>
+                  <button onclick="App.markOlderPlayed('${id}')">Mark older as played</button>
                   <button onclick="App.archiveAll('${id}')">Archive all</button>
                   <button onclick="App.unarchiveAll('${id}')">Unarchive all</button>
                   <label class="hamburger-checkbox">
@@ -517,6 +609,28 @@ const App = {
     }
   },
 
+  async markOlderPlayed(podcastId) {
+    document.querySelectorAll('.hamburger-dropdown.open').forEach(d => d.classList.remove('open'));
+    if (!this.currentPodcast) return;
+    const episodes = (this.currentPodcast.episodes || [])
+      .filter(e => !e.archived)
+      .sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+    if (episodes.length === 0) return;
+    // Use the oldest visible episode's pub-date as cutoff
+    const oldest = episodes[episodes.length - 1];
+    // Mark all episodes older than the newest episode (i.e., all but the first)
+    const cutoff = episodes[0]['pub-date'] || 0;
+    if (!cutoff) return;
+    try {
+      await CastAPI.markBeforePlayed(podcastId, cutoff);
+      this.toast('Marked older episodes as played', 'success');
+      this.showPodcastDetail(podcastId);
+    } catch (e) {
+      console.error(e);
+      this.toast('Failed to mark older as played', 'error');
+    }
+  },
+
   async archiveAll(podcastId) {
     document.querySelectorAll('.hamburger-dropdown.open').forEach(d => d.classList.remove('open'));
     try {
@@ -642,7 +756,8 @@ const App = {
 
       empty.style.display = 'none';
       list.innerHTML = queue.map((item, i) => `
-        <div class="episode-item">
+        <div class="episode-item queue-item" draggable="true" data-qi="${i}">
+          <div class="drag-handle" title="Drag to reorder">&#9776;</div>
           <div class="play-icon" onclick="App.playQueueItem(${i})">&#9654;</div>
           <div class="ep-info" onclick="App.playQueueItem(${i})">
             <div class="ep-title">${this.escHtml(item.title || 'Unknown episode')}</div>
@@ -657,6 +772,7 @@ const App = {
         </div>
       `).join('');
       this._queueData = queue;
+      this.setupQueueDrag(list);
     } catch (e) { console.error(e); }
   },
 
@@ -683,6 +799,99 @@ const App = {
       await CastAPI.dequeue(podcastId, episodeId);
       this.loadQueue();
     } catch (e) { console.error(e); }
+  },
+
+  setupQueueDrag(list) {
+    let dragIdx = null;
+    list.querySelectorAll('.queue-item').forEach(el => {
+      el.addEventListener('dragstart', (e) => {
+        dragIdx = parseInt(el.dataset.qi);
+        el.classList.add('dragging');
+        e.dataTransfer.effectAllowed = 'move';
+      });
+      el.addEventListener('dragend', () => {
+        el.classList.remove('dragging');
+        list.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+        dragIdx = null;
+      });
+      el.addEventListener('dragover', (e) => {
+        e.preventDefault();
+        e.dataTransfer.dropEffect = 'move';
+        list.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+        const target = e.target.closest('.queue-item');
+        if (target && target !== el) target.classList.add('drag-over');
+      });
+      el.addEventListener('drop', (e) => {
+        e.preventDefault();
+        const target = e.target.closest('.queue-item');
+        if (!target || dragIdx === null) return;
+        const dropIdx = parseInt(target.dataset.qi);
+        if (dragIdx === dropIdx) return;
+        const q = this._queueData.slice();
+        const [moved] = q.splice(dragIdx, 1);
+        q.splice(dropIdx, 0, moved);
+        this._queueData = q;
+        const order = q.map(item => ({
+          'podcast-id': item['podcast-id'],
+          'episode-id': item['episode-id']
+        }));
+        CastAPI.reorderQueue(order).catch(console.error);
+        this.loadQueue();
+      });
+      // Touch support: long-press to initiate
+      let touchTimer = null;
+      let touchDragging = false;
+      let touchClone = null;
+      let touchStartY = 0;
+      el.addEventListener('touchstart', (e) => {
+        const handle = e.target.closest('.drag-handle');
+        if (!handle) return;
+        touchStartY = e.touches[0].clientY;
+        touchTimer = setTimeout(() => {
+          touchDragging = true;
+          dragIdx = parseInt(el.dataset.qi);
+          el.classList.add('dragging');
+        }, 300);
+      }, { passive: true });
+      el.addEventListener('touchmove', (e) => {
+        if (!touchDragging) {
+          if (touchTimer && Math.abs(e.touches[0].clientY - touchStartY) > 10) {
+            clearTimeout(touchTimer);
+            touchTimer = null;
+          }
+          return;
+        }
+        e.preventDefault();
+        const touch = e.touches[0];
+        const target = document.elementFromPoint(touch.clientX, touch.clientY);
+        if (!target) return;
+        const item = target.closest('.queue-item');
+        list.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+        if (item && item !== el) item.classList.add('drag-over');
+      }, { passive: false });
+      el.addEventListener('touchend', () => {
+        clearTimeout(touchTimer);
+        touchTimer = null;
+        if (!touchDragging) return;
+        touchDragging = false;
+        el.classList.remove('dragging');
+        const overEl = list.querySelector('.drag-over');
+        list.querySelectorAll('.drag-over').forEach(d => d.classList.remove('drag-over'));
+        if (!overEl || dragIdx === null) return;
+        const dropIdx = parseInt(overEl.dataset.qi);
+        if (dragIdx === dropIdx) return;
+        const q = this._queueData.slice();
+        const [moved] = q.splice(dragIdx, 1);
+        q.splice(dropIdx, 0, moved);
+        this._queueData = q;
+        const order = q.map(item => ({
+          'podcast-id': item['podcast-id'],
+          'episode-id': item['episode-id']
+        }));
+        CastAPI.reorderQueue(order).catch(console.error);
+        this.loadQueue();
+      });
+    });
   },
 
   // Settings

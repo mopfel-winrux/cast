@@ -78,6 +78,23 @@
       feed-hashes=(map podcast-id @uvH)
   ==
 ::
++$  state-2
+  $:  %2
+      podcasts=(map podcast-id podcast)
+      episodes=(map podcast-id (map episode-id episode))
+      estate=(map episode-id episode-state)
+      =queue
+      =settings
+      cache=(map episode-id octs)
+      current=(unit [=podcast-id =episode-id])
+      archived=(set episode-id)
+      history=(list [timestamp=@da =podcast-id =episode-id])
+      feed-hashes=(map podcast-id @uvH)
+      feed-errors=(map @t @t)
+      podcast-speeds=(map podcast-id @ud)
+      podcast-order=(list podcast-id)
+  ==
+::
 ::  poke actions
 ::
 +$  action
@@ -100,6 +117,10 @@
       [%mark-all-unplayed =podcast-id]
       [%archive-all =podcast-id]
       [%unarchive-all =podcast-id]
+      [%reorder-queue order=(list [=podcast-id =episode-id])]
+      [%mark-before-played =podcast-id before=@da]
+      [%set-podcast-speed =podcast-id speed=@ud]
+      [%reorder-podcasts order=(list podcast-id)]
   ==
 ::
 ::  subscription updates
