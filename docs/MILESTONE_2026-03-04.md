@@ -28,7 +28,7 @@ Cast has reached a mature MVP state. All core podcast player features are implem
 - Created `sw.js` service worker with stale-while-revalidate caching for app shell
 - Added iOS meta tags (apple-mobile-web-app-capable, status-bar-style)
 - Added safe area insets for notch phones
-- **NOTE: PWA may not be working correctly on Android. Needs investigation.** The manifest, service worker, and icons are all served correctly (verified via curl). Chrome's install prompt may not trigger — could be an Urbit authentication/session issue preventing the SW from caching properly, or a scope issue.
+- **Fixed unauthenticated access for PWA files**: The browser fetches manifest.json, sw.js, and icons without cookies. Modified `cast-fileserver.hoon` to whitelist these 5 paths from the auth check. All PWA files now return 200 without auth.
 
 ### UI Improvements
 - **Sort toggle**: "Newest" / "Oldest" button on episode list, sorts by pub-date
@@ -73,7 +73,7 @@ Cast has reached a mature MVP state. All core podcast player features are implem
 ## Possible Next Steps
 
 ### High Priority
-1. **Investigate PWA on Android** — Install prompt not triggering. Could be auth/session cookies not being forwarded to the service worker, scope configuration, or Chrome-specific requirements. Try testing with Chrome DevTools Application tab.
+1. **~~Investigate PWA on Android~~** — FIXED. Root cause was `cast-fileserver` requiring auth for all files. Browser fetches PWA files (manifest, SW, icons) without cookies. Added whitelist for PWA paths. Verify install prompt now works on Android.
 2. **Queue drag-to-reorder** — CSS classes exist but JS drag handlers aren't implemented. Users can only add/remove from queue, not reorder.
 3. **Episode download tracking** — Browser Cache API state can get out of sync with the UI's `downloadedEpisodes` set (e.g., after clearing browser data).
 
