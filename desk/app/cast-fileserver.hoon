@@ -146,7 +146,19 @@
     :_  this(cash (~(put in cash) url.request))
     %+  snoc  serve
     (store url.request ~ auth=| %payload pay)
-  ?.  authenticated
+  ::  allow PWA files without auth (browser fetches these without cookies)
+  ::
+  =/  pwa-paths=(set @t)
+    %-  ~(gas in *(set @t))
+    :~  '/apps/cast/manifest.json'
+        '/apps/cast/sw.js'
+        '/apps/cast/icon.svg'
+        '/apps/cast/icon-192.png'
+        '/apps/cast/icon-512.png'
+    ==
+  ?.  ?|  authenticated
+          (~(has in pwa-paths) url.request)
+      ==
     [| [403 ~] `(as-octs:mimes:html 'unauthenticated')]
   ?.  ?=(%'GET' method.request)
     [| [405 ~] `(as-octs:mimes:html 'read-only resource')]
