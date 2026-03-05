@@ -893,7 +893,7 @@ const App = {
   },
 
   sortEpisodes(episodes) {
-    const dir = this.episodeSortAsc ? 1 : -1;
+    const dir = this.episodeSortAsc ? -1 : 1;
     episodes.sort((a, b) => dir * ((b['pub-date'] || 0) - (a['pub-date'] || 0)));
     return episodes;
   },

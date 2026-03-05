@@ -376,11 +376,16 @@
           =/  ep-list=(list [episode-id:cast episode:cast])  ~(tap by eps)
           =/  visible=(list [episode-id:cast episode:cast])
             (skip ep-list |=([eid=episode-id:cast *] (~(has in archived) eid)))
+          =/  played-set=(set episode-id:cast)
+            %-  ~(gas in *(set episode-id:cast))
+            %+  murn  ~(tap by estate)
+            |=  [eid=episode-id:cast es=episode-state:cast]
+            ?.(played.es ~ `eid)
           =/  unplayed=@ud
-            %-  lent
-            %+  skip  visible
-            |=  [eid=episode-id:cast *]
-            played:(fall (~(get by estate) eid) *episode-state:cast)
+            %+  roll  visible
+            |=  [[eid=episode-id:cast ep=episode:cast] count=@ud]
+            ?.  (~(has in played-set) eid)  +(count)
+            count
           %-  pairs:enjs:format
           :~  ['id' s+(scot %uv pid)]
               ['title' s+title.pod]
@@ -727,11 +732,16 @@
             =/  ep-list=(list [episode-id:cast episode:cast])  ~(tap by eps)
             =/  visible=(list [episode-id:cast episode:cast])
               (skip ep-list |=([eid=episode-id:cast *] (~(has in archived) eid)))
+            =/  played-set=(set episode-id:cast)
+              %-  ~(gas in *(set episode-id:cast))
+              %+  murn  ~(tap by estate)
+              |=  [eid=episode-id:cast es=episode-state:cast]
+              ?.(played.es ~ `eid)
             =/  unplayed=@ud
-              %-  lent
-              %+  skip  visible
-              |=  [eid=episode-id:cast *]
-              played:(fall (~(get by estate) eid) *episode-state:cast)
+              %+  roll  visible
+              |=  [[eid=episode-id:cast ep=episode:cast] count=@ud]
+              ?.  (~(has in played-set) eid)  +(count)
+              count
             %-  pairs:enjs:format
             :~  ['id' s+(scot %uv pid)]
                 ['title' s+title.pod]
