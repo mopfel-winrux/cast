@@ -9,6 +9,7 @@ const Player = {
   sleepEndTime: null,
   sleepCountdown: null,
   podcastSpeeds: {},
+  resumePollTimer: null,
 
   init() {
     this.audio = document.getElementById('audio-element');
@@ -34,7 +35,6 @@ const Player = {
     this.speedSelect.addEventListener('change', () => {
       const speed = parseFloat(this.speedSelect.value);
       this.audio.playbackRate = speed;
-      // Save per-podcast speed to backend
       if (this.currentPodcast && this.currentPodcast.id) {
         const speedInt = Math.round(speed * 100);
         this.podcastSpeeds[this.currentPodcast.id] = speedInt;
@@ -44,11 +44,20 @@ const Player = {
 
     this.sleepSelect.addEventListener('change', () => this.setSleepTimer());
 
-    this.audio.addEventListener('timeupdate', () => this.updateProgress());
+    this.audio.addEventListener('timeupdate', () => {
+      this.updateProgress();
+      this.updateChapterHighlight();
+    });
     this.audio.addEventListener('ended', () => this.onEnded());
     this.audio.addEventListener('loadedmetadata', () => {
       this.totalTimeEl.textContent = this.formatTime(this.audio.duration);
     });
+
+    // Bookmark button in player bar
+    const bookmarkBtn = document.getElementById('player-bookmark');
+    if (bookmarkBtn) {
+      bookmarkBtn.addEventListener('click', () => this.quickBookmark());
+    }
 
     // Keyboard shortcuts
     document.addEventListener('keydown', (e) => {
@@ -71,11 +80,27 @@ const Player = {
       }
     });
 
+    // Download tracking: re-scan cache on tab visibility change
+    document.addEventListener('visibilitychange', async () => {
+      if (document.visibilityState === 'visible') {
+        try {
+          await CastDownload.init();
+          if (typeof App !== 'undefined') App.refreshCurrentView();
+        } catch (e) { /* ignore */ }
+      }
+    });
+
     // MediaSession API
     this.setupMediaSession();
 
     // Load per-podcast speeds from backend
     this.loadPodcastSpeeds();
+
+    // Cross-device resume: check for current episode on init
+    this.checkResume();
+
+    // Start resume polling (only when paused)
+    this.startResumePoll();
   },
 
   async loadPodcastSpeeds() {
@@ -100,7 +125,6 @@ const Player = {
     navigator.mediaSession.setActionHandler('seekbackward', () => this.skip(-15));
     navigator.mediaSession.setActionHandler('seekforward', () => this.skip(30));
     navigator.mediaSession.setActionHandler('nexttrack', async () => {
-      // Play next in queue
       try {
         const data = await CastAPI.getQueue();
         const queue = data.queue || [];
@@ -216,6 +240,7 @@ const Player = {
     this.audio.play();
     this.show(episode, podcast);
     this.updateMediaSession();
+    this.renderChapters(episode.chapters || []);
 
     // Save position periodically
     if (this.saveInterval) clearInterval(this.saveInterval);
@@ -240,6 +265,10 @@ const Player = {
       art.style.display = 'none';
     }
     this.playPauseBtn.innerHTML = '&#9646;&#9646;';
+
+    // Show current chapter subtitle
+    const chapterEl = document.getElementById('player-chapter');
+    if (chapterEl) chapterEl.textContent = '';
   },
 
   togglePlay() {
@@ -281,6 +310,10 @@ const Player = {
   savePosition() {
     if (!this.currentEpisode || !this.audio.currentTime) return;
     CastAPI.setPosition(this.currentEpisode.id, this.audio.currentTime).catch(console.error);
+    // Log listen time
+    if (this.currentPodcast && this.currentPodcast.id) {
+      CastAPI.logListen(this.currentPodcast.id, 15).catch(console.error);
+    }
   },
 
   // Sleep timer
@@ -318,6 +351,10 @@ const Player = {
     this.clearSleepTimer();
     if (this.currentEpisode) {
       CastAPI.setPlayed(this.currentEpisode.id, true).catch(console.error);
+    }
+    // Log completion
+    if (this.currentPodcast && this.currentPodcast.id) {
+      CastAPI.logComplete(this.currentPodcast.id).catch(console.error);
     }
     // Dequeue the finished episode, then advance to next
     try {
@@ -366,6 +403,151 @@ const Player = {
     this.playPauseBtn.innerHTML = '&#9654;';
   },
 
+  // Chapters
+  renderChapters(chapters) {
+    const container = document.getElementById('chapter-list');
+    if (!container) return;
+    if (!chapters || chapters.length === 0) {
+      container.innerHTML = '';
+      container.style.display = 'none';
+      return;
+    }
+    container.style.display = 'block';
+    container.innerHTML = `
+      <div class="chapter-header" onclick="this.parentElement.classList.toggle('collapsed')">
+        Chapters (${chapters.length})
+      </div>
+      <div class="chapter-items">
+        ${chapters.map((ch, i) => `
+          <div class="chapter-item" data-ci="${i}" data-start="${ch.start}" onclick="Player.seekToChapter(${ch.start})">
+            <span class="chapter-time">${this.formatTime(ch.start)}</span>
+            <span class="chapter-title">${this.escHtml(ch.title)}</span>
+          </div>
+        `).join('')}
+      </div>
+    `;
+  },
+
+  seekToChapter(seconds) {
+    if (this.audio.src) {
+      this.audio.currentTime = seconds;
+    }
+  },
+
+  updateChapterHighlight() {
+    const container = document.getElementById('chapter-list');
+    if (!container || !this.currentEpisode) return;
+    const chapters = this.currentEpisode.chapters || [];
+    if (chapters.length === 0) return;
+    const ct = this.audio.currentTime;
+    let activeIdx = -1;
+    for (let i = chapters.length - 1; i >= 0; i--) {
+      if (ct >= chapters[i].start) { activeIdx = i; break; }
+    }
+    container.querySelectorAll('.chapter-item').forEach((el, i) => {
+      el.classList.toggle('active', i === activeIdx);
+    });
+    // Update player bar chapter subtitle
+    const chapterEl = document.getElementById('player-chapter');
+    if (chapterEl && activeIdx >= 0) {
+      chapterEl.textContent = chapters[activeIdx].title;
+    } else if (chapterEl) {
+      chapterEl.textContent = '';
+    }
+  },
+
+  // Quick bookmark from player bar
+  async quickBookmark() {
+    if (!this.currentEpisode || !this.audio.currentTime) return;
+    const pos = Math.floor(this.audio.currentTime);
+    try {
+      await CastAPI.addBookmark(this.currentEpisode.id, pos, 'Bookmark');
+      App.toast('Bookmark added at ' + this.formatTime(pos), 'success');
+    } catch (e) {
+      App.toast('Failed to add bookmark', 'error');
+    }
+  },
+
+  // Cross-device resume
+  async checkResume() {
+    try {
+      const data = await CastAPI.getPlayer();
+      if (!data.current) return;
+      // If we're not currently playing anything, show resume banner
+      if (!this.currentEpisode) {
+        this.showResumeBanner(data.current);
+      }
+    } catch (e) { /* ignore */ }
+  },
+
+  showResumeBanner(current) {
+    const existing = document.getElementById('resume-banner');
+    if (existing) existing.remove();
+    if (!current['episode-title']) return;
+    const pos = current.position || 0;
+    const banner = document.createElement('div');
+    banner.id = 'resume-banner';
+    banner.className = 'resume-banner';
+    banner.innerHTML = `
+      <span>Resume: ${this.escHtml(current['episode-title'])}${pos > 0 ? ' \u2014 ' + this.formatTime(pos) : ''}</span>
+      <button class="btn btn-small" onclick="Player.resumeFromBanner()">Play</button>
+      <button class="resume-dismiss" onclick="this.parentElement.remove()">&times;</button>
+    `;
+    banner._data = current;
+    const home = document.getElementById('page-home');
+    if (home) home.prepend(banner);
+  },
+
+  async resumeFromBanner() {
+    const banner = document.getElementById('resume-banner');
+    if (!banner || !banner._data) return;
+    const cur = banner._data;
+    const ep = {
+      id: cur['episode-id'],
+      title: cur['episode-title'] || '',
+      'audio-url': '',
+      'image-url': cur['image-url'] || '',
+      position: cur.position || 0
+    };
+    const pod = {
+      id: cur['podcast-id'],
+      title: cur['podcast-title'] || '',
+      'image-url': cur['image-url'] || ''
+    };
+    // Fetch full episode data to get audio-url
+    try {
+      const data = await CastAPI.getPodcast(cur['podcast-id']);
+      const fullEp = (data.episodes || []).find(e => e.id === cur['episode-id']);
+      if (fullEp) {
+        ep['audio-url'] = fullEp['audio-url'];
+        ep['image-url'] = fullEp['image-url'] || ep['image-url'];
+        ep.chapters = fullEp.chapters || [];
+      }
+    } catch (e) { /* use what we have */ }
+    banner.remove();
+    this.play(ep, pod);
+  },
+
+  startResumePoll() {
+    if (this.resumePollTimer) clearInterval(this.resumePollTimer);
+    this.resumePollTimer = setInterval(async () => {
+      // Only poll when paused and we have a current episode
+      if (!this.currentEpisode || !this.audio.paused) return;
+      try {
+        const data = await CastAPI.getPlayer();
+        if (!data.current) return;
+        if (data.current['episode-id'] === this.currentEpisode.id) {
+          const serverPos = data.current.position || 0;
+          const localPos = Math.floor(this.audio.currentTime || 0);
+          if (Math.abs(serverPos - localPos) > 5) {
+            this.audio.currentTime = serverPos;
+            App.toast('Position updated from another device');
+          }
+        }
+      } catch (e) { /* ignore */ }
+    }, 30000);
+  },
+
   formatTime(seconds) {
     if (!seconds || isNaN(seconds)) return '0:00';
     const h = Math.floor(seconds / 3600);
@@ -375,6 +557,13 @@ const Player = {
     return `${m}:${s.toString().padStart(2, '0')}`;
   },
 
+  escHtml(str) {
+    if (!str) return '';
+    const div = document.createElement('div');
+    div.textContent = str;
+    return div.innerHTML;
+  },
+
   setSpeed(speed) {
     this.audio.playbackRate = speed;
     this.speedSelect.value = speed;
@@ -382,6 +571,7 @@ const Player = {
 
   destroy() {
     if (this.saveInterval) clearInterval(this.saveInterval);
+    if (this.resumePollTimer) clearInterval(this.resumePollTimer);
     this.clearSleepTimer();
     this.savePosition();
   }
@@ -391,17 +581,21 @@ const Player = {
 const CastDownload = {
   CACHE_NAME: 'cast-audio',
   downloading: new Set(),
+  cacheAvailable: ('caches' in window),
 
   async init() {
-    // Populate downloaded set from cache keys
+    if (!this.cacheAvailable) return;
     try {
       const cache = await caches.open(this.CACHE_NAME);
       const keys = await cache.keys();
       App.downloadedEpisodes = new Set(keys.map(r => r.url));
-    } catch (e) { /* Cache API not available */ }
+    } catch (e) {
+      this.cacheAvailable = false;
+    }
   },
 
   async download(url, onProgress) {
+    if (!this.cacheAvailable) throw new Error('Cache API not available');
     if (this.downloading.has(url)) return;
     this.downloading.add(url);
     try {
@@ -416,6 +610,7 @@ const CastDownload = {
   },
 
   async isDownloaded(url) {
+    if (!this.cacheAvailable) return false;
     try {
       const cache = await caches.open(this.CACHE_NAME);
       const match = await cache.match(url);
@@ -424,6 +619,7 @@ const CastDownload = {
   },
 
   async getUrl(originalUrl) {
+    if (!this.cacheAvailable) return originalUrl;
     try {
       const cache = await caches.open(this.CACHE_NAME);
       const match = await cache.match(originalUrl);
@@ -436,10 +632,13 @@ const CastDownload = {
   },
 
   async remove(url) {
+    if (!this.cacheAvailable) return;
     try {
       const cache = await caches.open(this.CACHE_NAME);
       await cache.delete(url);
       App.downloadedEpisodes.delete(url);
+      // Re-render current view after remove
+      if (typeof App !== 'undefined') App.refreshCurrentView();
     } catch (e) { /* ignore */ }
   }
 };

@@ -109,6 +109,29 @@
       =/  order=(list podcast-id:cast)
         ((ot ~[order+(ar (se %uv))]) jon)
       [%reorder-podcasts order]
+    ::
+        %'set-note'
+      =/  f  (ot ~[episode-id+(se %uv) note+so])
+      =/  [eid=@uv n=@t]  (f jon)
+      [%set-note eid n]
+    ::
+        %'add-bookmark'
+      =/  f  (ot ~[episode-id+(se %uv) position+ni label+so])
+      =/  [eid=@uv pos=@ud lbl=@t]  (f jon)
+      [%add-bookmark eid pos lbl]
+    ::
+        %'remove-bookmark'
+      =/  f  (ot ~[episode-id+(se %uv) position+ni])
+      =/  [eid=@uv pos=@ud]  (f jon)
+      [%remove-bookmark eid pos]
+    ::
+        %'log-listen'
+      =/  f  (ot ~[podcast-id+(se %uv) seconds+ni])
+      =/  [pid=@uv secs=@ud]  (f jon)
+      [%log-listen pid secs]
+    ::
+        %'log-complete'
+      [%log-complete ((ot ~[podcast-id+(se %uv)]) jon)]
     ==
   --
 ++  grad  %noun

@@ -11,6 +11,8 @@ const App = {
   pollTimer: null,
   downloadedEpisodes: new Set(),
   feedErrors: {},
+  _refreshDebounce: null,
+  _lastRefresh: 0,
 
   async init() {
     Player.init();
@@ -21,6 +23,38 @@ const App = {
     await this.loadPodcasts();
     await this.loadSettings();
     this.loadFeedErrors();
+
+    // Listen for cast-state-changed from pokes — debounced safety-net refresh.
+    // Skips if a manual refresh already happened within the last 2s.
+    window.addEventListener('cast-state-changed', () => {
+      clearTimeout(this._refreshDebounce);
+      this._refreshDebounce = setTimeout(() => {
+        if (Date.now() - this._lastRefresh < 2000) return;
+        this.refreshCurrentView();
+      }, 500);
+    });
+  },
+
+  // Detect current page and refresh it
+  refreshCurrentView() {
+    this._lastRefresh = Date.now();
+    const active = document.querySelector('.page.active');
+    if (!active) return;
+    const id = active.id;
+    if (id === 'page-home') {
+      this.loadPodcasts();
+      this.loadFeedErrors();
+    } else if (id === 'page-podcast' && this.currentPodcast) {
+      this.showPodcastDetail(this.currentPodcast.id);
+    } else if (id === 'page-queue') {
+      this.loadQueue();
+    } else if (id === 'page-history') {
+      this.loadHistory();
+    } else if (id === 'page-settings') {
+      this.loadSettingsPage();
+    } else if (id === 'page-stats') {
+      this.loadStats();
+    }
   },
 
   async loadFeedErrors() {
@@ -112,6 +146,9 @@ const App = {
     } else if (page === 'history') {
       this.showPage('history');
       this.loadHistory();
+    } else if (page === 'stats') {
+      this.showPage('stats');
+      this.loadStats();
     } else if (page === 'settings') {
       this.showPage('settings');
       this.loadSettingsPage();
@@ -136,7 +173,6 @@ const App = {
     try {
       const data = await CastAPI.getPodcasts();
       const newPods = data.podcasts || [];
-      // Check if badge counts changed
       const changed = newPods.length !== this.podcasts.length || newPods.some((p, i) => {
         const old = this.podcasts.find(op => op.id === p.id);
         return !old || old['unplayed-count'] !== p['unplayed-count'];
@@ -144,7 +180,6 @@ const App = {
       if (changed) {
         this.podcasts = newPods;
         this.renderPodcasts();
-        // Auto-download new episodes if enabled
         if (localStorage.getItem('cast-auto-download') === 'true') {
           this.autoDownloadNew(newPods);
         }
@@ -171,6 +206,7 @@ const App = {
 
   // Podcast list
   async loadPodcasts() {
+    this._lastRefresh = Date.now();
     try {
       const data = await CastAPI.getPodcasts();
       this.podcasts = data.podcasts || [];
@@ -244,14 +280,12 @@ const App = {
   setupPodcastDrag(grid, podcasts) {
     let dragIdx = null;
     let dragCard = null;
-    // Click on card (but not handle) navigates
     grid.querySelectorAll('.podcast-card').forEach(el => {
       el.addEventListener('click', (e) => {
         if (e.target.closest('.pod-drag-handle')) return;
         this.navigateToPodcast(el.dataset.pid);
       });
     });
-    // Drag starts from the handle element
     grid.querySelectorAll('.pod-drag-handle').forEach(handle => {
       handle.addEventListener('dragstart', (e) => {
         dragCard = handle.closest('.podcast-card');
@@ -267,7 +301,6 @@ const App = {
         dragCard = null;
       });
     });
-    // Drop targets are the cards
     grid.querySelectorAll('.podcast-card').forEach(el => {
       el.addEventListener('dragover', (e) => {
         e.preventDefault();
@@ -290,21 +323,38 @@ const App = {
     });
   },
 
-  // Refresh all feeds
+  // Refresh all feeds with smart polling
   async handleRefreshAll() {
     const btn = document.getElementById('refresh-all-btn');
     btn.textContent = 'Refreshing...';
     btn.disabled = true;
+    const prevPods = JSON.stringify(this.podcasts.map(p => p['unplayed-count']));
     try {
       await CastAPI.refreshAll();
       this.toast('Refreshing all feeds...');
-      setTimeout(async () => {
-        await this.loadPodcasts();
-        this.loadFeedErrors();
-        btn.textContent = 'Refresh';
-        btn.disabled = false;
-        this.toast('Feeds refreshed', 'success');
-      }, 5000);
+      const start = Date.now();
+      const poll = async () => {
+        try {
+          const data = await CastAPI.getPodcasts();
+          this.podcasts = data.podcasts || [];
+          this.renderPodcasts();
+          const newPods = JSON.stringify(this.podcasts.map(p => p['unplayed-count']));
+          if (newPods !== prevPods || Date.now() - start > 60000) {
+            this.loadFeedErrors();
+            btn.textContent = 'Refresh';
+            btn.disabled = false;
+            this.toast('Feeds refreshed', 'success');
+            return;
+          }
+        } catch (e) { /* ignore */ }
+        if (Date.now() - start > 60000) {
+          btn.textContent = 'Refresh';
+          btn.disabled = false;
+          return;
+        }
+        setTimeout(poll, 3000);
+      };
+      setTimeout(poll, 3000);
     } catch (e) {
       console.error(e);
       btn.textContent = 'Refresh';
@@ -315,6 +365,7 @@ const App = {
 
   // Podcast detail
   async showPodcastDetail(id) {
+    this._lastRefresh = Date.now();
     this.showPage('podcast');
     this.episodeFilter = 'all';
     this.showArchived = false;
@@ -324,7 +375,6 @@ const App = {
     detail.innerHTML = '<p class="loading">Loading...</p>';
     list.innerHTML = '';
 
-    // Start polling for this podcast
     this.startPolling(async () => {
       try {
         const data = await CastAPI.getPodcast(id);
@@ -409,7 +459,7 @@ const App = {
     }, 200);
   },
 
-  // Episode detail / show notes
+  // Episode detail / show notes + notes & bookmarks
   async showEpisodeDetail(podcastId, episodeId) {
     this.showPage('episode');
     const detail = document.getElementById('episode-detail');
@@ -428,6 +478,8 @@ const App = {
       const es = { played: ep.played, position: ep.position || 0 };
       const img = ep['image-url'] || data['image-url'] || '';
       const isDl = this.downloadedEpisodes.has(ep['audio-url']);
+      const epNote = ep.note || '';
+      const epBookmarks = ep.bookmarks || [];
 
       detail.innerHTML = `
         <div class="episode-detail-header">
@@ -448,9 +500,10 @@ const App = {
               <button class="btn btn-small btn-outline" onclick="App.togglePlayed('${ep.id}', ${!es.played})">
                 ${es.played ? 'Mark unplayed' : 'Mark played'}
               </button>
+              ${CastDownload.cacheAvailable ? `
               <button class="btn btn-small btn-outline" onclick="App.downloadEpisode('${ep['audio-url']}')" ${isDl ? 'disabled' : ''}>
                 ${isDl ? 'Downloaded' : '\u2913 Download'}
-              </button>
+              </button>` : ''}
             </div>
           </div>
         </div>
@@ -458,10 +511,64 @@ const App = {
           <h3>Show Notes</h3>
           <div class="show-notes-content">${ep.description || '<p class="empty-state">No show notes available.</p>'}</div>
         </div>
+        <div class="my-notes-section">
+          <h3>My Notes</h3>
+          <textarea class="my-notes-textarea" id="ep-note-textarea" placeholder="Add your notes here...">${this.escHtml(epNote)}</textarea>
+        </div>
+        <div class="bookmarks-section">
+          <h3>Bookmarks</h3>
+          <div id="bookmarks-list">
+            ${epBookmarks.length === 0 ? '<p class="empty-state">No bookmarks yet.</p>' : epBookmarks.map(bk => `
+              <div class="bookmark-item">
+                <span class="bookmark-time" onclick="Player.seekToChapter(${bk.position})">${Player.formatTime(bk.position)}</span>
+                <span class="bookmark-label">${this.escHtml(bk.label)}</span>
+                <button class="bookmark-remove" onclick="App.removeBookmark('${episodeId}', ${bk.position})">&times;</button>
+              </div>
+            `).join('')}
+          </div>
+          <button class="btn btn-small btn-outline" onclick="App.addBookmarkFromPlayer('${episodeId}')">+ Bookmark</button>
+        </div>
       `;
+
+      // Auto-save notes with debounce
+      const textarea = document.getElementById('ep-note-textarea');
+      let noteTimeout = null;
+      textarea.addEventListener('input', () => {
+        clearTimeout(noteTimeout);
+        noteTimeout = setTimeout(() => {
+          CastAPI.setNote(episodeId, textarea.value).catch(console.error);
+        }, 1000);
+      });
     } catch (e) {
       detail.innerHTML = '<p>Failed to load episode.</p>';
       console.error(e);
+    }
+  },
+
+  async addBookmarkFromPlayer(episodeId) {
+    const pos = Player.audio ? Math.floor(Player.audio.currentTime || 0) : 0;
+    const label = prompt('Bookmark label:', 'Bookmark') || 'Bookmark';
+    try {
+      await CastAPI.addBookmark(episodeId, pos, label);
+      this.toast('Bookmark added', 'success');
+      // Refresh episode detail
+      if (this.currentPodcast) {
+        this.showEpisodeDetail(this.currentPodcast.id, episodeId);
+      }
+    } catch (e) {
+      this.toast('Failed to add bookmark', 'error');
+    }
+  },
+
+  async removeBookmark(episodeId, position) {
+    try {
+      await CastAPI.removeBookmark(episodeId, position);
+      this.toast('Bookmark removed', 'success');
+      if (this.currentPodcast) {
+        this.showEpisodeDetail(this.currentPodcast.id, episodeId);
+      }
+    } catch (e) {
+      this.toast('Failed to remove bookmark', 'error');
     }
   },
 
@@ -480,7 +587,6 @@ const App = {
     const list = document.getElementById('episode-list');
     let filtered = episodes;
 
-    // Apply search filter
     if (this.episodeSearch) {
       filtered = filtered.filter(e => e.title.toLowerCase().includes(this.episodeSearch));
     }
@@ -490,7 +596,6 @@ const App = {
     } else if (this.episodeFilter === 'downloaded') {
       filtered = filtered.filter(e => this.downloadedEpisodes.has(e['audio-url']));
     } else {
-      // hide archived unless toggled
       if (!this.showArchived) {
         filtered = filtered.filter(e => !e.archived);
       }
@@ -521,7 +626,7 @@ const App = {
             </div>
           </div>
           <div class="episode-actions">
-            <button onclick="App.downloadEpisode('${ep['audio-url']}')" title="Download" ${isDl ? 'disabled' : ''}>${isDl ? '\u2713' : '\u2913'}</button>
+            ${CastDownload.cacheAvailable ? `<button onclick="App.downloadEpisode('${ep['audio-url']}')" title="Download" ${isDl ? 'disabled' : ''}>${isDl ? '\u2713' : '\u2913'}</button>` : ''}
             <button onclick="App.enqueueEpisode('${podcastId}', '${ep.id}')" title="Add to queue">+Q</button>
             <button onclick="App.togglePlayed('${ep.id}', ${!ep.played})" title="Toggle played">
               ${ep.played ? '\u21a9' : '\u2713'}
@@ -535,11 +640,29 @@ const App = {
     }).join('');
   },
 
+  // Refresh single podcast with smart polling
   async handleRefreshPodcast(id) {
     try {
+      const prevCount = (this.currentPodcast?.episodes || []).length;
       await CastAPI.refresh(id);
       this.toast('Refreshing feed...');
-      setTimeout(() => this.showPodcastDetail(id), 3000);
+      const start = Date.now();
+      const poll = async () => {
+        try {
+          const data = await CastAPI.getPodcast(id);
+          if ((data.episodes || []).length !== prevCount || Date.now() - start > 30000) {
+            this.currentPodcast = data;
+            this.showPodcastDetail(id);
+            return;
+          }
+        } catch (e) { /* ignore */ }
+        if (Date.now() - start > 30000) {
+          this.showPodcastDetail(id);
+          return;
+        }
+        setTimeout(poll, 2000);
+      };
+      setTimeout(poll, 2000);
     } catch (e) {
       this.toast('Failed to refresh', 'error');
     }
@@ -575,11 +698,9 @@ const App = {
     event.stopPropagation();
     const dropdown = event.currentTarget.nextElementSibling;
     const isOpen = dropdown.classList.contains('open');
-    // close any open dropdowns
     document.querySelectorAll('.hamburger-dropdown.open').forEach(d => d.classList.remove('open'));
     if (!isOpen) {
       dropdown.classList.add('open');
-      // close on outside click
       const close = () => { dropdown.classList.remove('open'); document.removeEventListener('click', close); };
       setTimeout(() => document.addEventListener('click', close), 0);
     }
@@ -616,9 +737,6 @@ const App = {
       .filter(e => !e.archived)
       .sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
     if (episodes.length === 0) return;
-    // Use the oldest visible episode's pub-date as cutoff
-    const oldest = episodes[episodes.length - 1];
-    // Mark all episodes older than the newest episode (i.e., all but the first)
     const cutoff = episodes[0]['pub-date'] || 0;
     if (!cutoff) return;
     try {
@@ -684,7 +802,6 @@ const App = {
     try {
       await CastDownload.download(audioUrl);
       this.toast('Downloaded!', 'success');
-      // Re-render current view to update download indicators
       if (this.currentPodcast) {
         const episodes = (this.currentPodcast.episodes || []).slice();
         this.sortEpisodes(episodes);
@@ -698,6 +815,7 @@ const App = {
 
   // History
   async loadHistory() {
+    this._lastRefresh = Date.now();
     const list = document.getElementById('history-list');
     list.innerHTML = '<p class="loading">Loading...</p>';
 
@@ -710,7 +828,6 @@ const App = {
         return;
       }
 
-      // Group by date
       const groups = {};
       history.forEach(item => {
         const d = new Date(item.timestamp * 1000);
@@ -742,6 +859,7 @@ const App = {
 
   // Queue
   async loadQueue() {
+    this._lastRefresh = Date.now();
     try {
       const data = await CastAPI.getQueue();
       const list = document.getElementById('queue-list');
@@ -841,7 +959,6 @@ const App = {
       // Touch support: long-press to initiate
       let touchTimer = null;
       let touchDragging = false;
-      let touchClone = null;
       let touchStartY = 0;
       el.addEventListener('touchstart', (e) => {
         const handle = e.target.closest('.drag-handle');
@@ -907,7 +1024,6 @@ const App = {
   },
 
   loadSettingsPage() {
-    // Load toggles from localStorage
     document.getElementById('setting-autoplay-next').checked = localStorage.getItem('cast-autoplay-next') === 'true';
     document.getElementById('setting-auto-download').checked = localStorage.getItem('cast-auto-download') === 'true';
     document.getElementById('setting-theme').value = localStorage.getItem('cast-theme') || 'dark';
@@ -918,7 +1034,6 @@ const App = {
     const refresh = parseInt(document.getElementById('setting-refresh').value) * 3600;
     const autoDownload = document.getElementById('setting-autodownload').checked;
 
-    // Save localStorage settings
     localStorage.setItem('cast-autoplay-next', document.getElementById('setting-autoplay-next').checked);
     localStorage.setItem('cast-auto-download', document.getElementById('setting-auto-download').checked);
     const theme = document.getElementById('setting-theme').value;
@@ -935,6 +1050,55 @@ const App = {
     } catch (e) {
       console.error(e);
       this.toast('Failed to save settings', 'error');
+    }
+  },
+
+  // Stats
+  async loadStats() {
+    this._lastRefresh = Date.now();
+    const content = document.getElementById('stats-content');
+    content.innerHTML = '<p class="loading">Loading...</p>';
+
+    try {
+      const data = await CastAPI.getStats();
+      const totalHours = (data['total-seconds'] || 0) / 3600;
+      const totalCompleted = data['total-completed'] || 0;
+      const podcasts = data.podcasts || [];
+      const maxSecs = podcasts.length > 0 ? Math.max(...podcasts.map(p => p.seconds || 0), 1) : 1;
+
+      content.innerHTML = `
+        <div class="stats-summary">
+          <div class="stat-card">
+            <div class="stat-number">${totalHours.toFixed(1)}</div>
+            <div class="stat-label">Hours listened</div>
+          </div>
+          <div class="stat-card">
+            <div class="stat-number">${totalCompleted}</div>
+            <div class="stat-label">Episodes completed</div>
+          </div>
+        </div>
+        ${podcasts.length > 0 ? `
+        <h3 style="margin: 24px 0 16px">Per Podcast</h3>
+        <div class="stats-chart">
+          ${podcasts.filter(p => p.seconds > 0 || p.completed > 0).map(p => `
+            <div class="stats-row">
+              <img src="${this.escHtml(p['image-url'] || '')}" class="stats-pod-img" alt=""
+                   onerror="this.style.background='var(--bg-card)'; this.src=''">
+              <div class="stats-row-info">
+                <div class="stats-row-title">${this.escHtml(p.title)}</div>
+                <div class="stats-bar-wrap">
+                  <div class="stats-bar" style="width: ${((p.seconds || 0) / maxSecs * 100).toFixed(1)}%"></div>
+                </div>
+                <div class="stats-row-meta">${(p.seconds / 3600).toFixed(1)}h &middot; ${p.completed} completed</div>
+              </div>
+            </div>
+          `).join('')}
+        </div>
+        ` : '<p class="empty-state" style="margin-top:24px">Start listening to see your stats!</p>'}
+      `;
+    } catch (e) {
+      console.error(e);
+      content.innerHTML = '<p class="empty-state">Failed to load stats.</p>';
     }
   },
 
@@ -956,7 +1120,7 @@ const App = {
     }
   },
 
-  // Subscribe
+  // Subscribe with smart polling
   async handleSubscribe() {
     const input = document.getElementById('feed-url');
     const url = input.value.trim();
@@ -971,7 +1135,6 @@ const App = {
       await CastAPI.subscribe(url);
       input.value = '';
       this.toast('Fetching and parsing feed...');
-      // poll until new podcast appears or timeout
       const start = Date.now();
       const poll = async () => {
         try {
@@ -993,9 +1156,9 @@ const App = {
           this.toast('Feed is still loading, check back shortly');
           return;
         }
-        setTimeout(poll, 1500);
+        setTimeout(poll, 2000);
       };
-      setTimeout(poll, 1500);
+      setTimeout(poll, 2000);
     } catch (e) {
       console.error(e);
       this.toast('Failed to subscribe', 'error');
@@ -1033,7 +1196,6 @@ const App = {
       await CastAPI.importOpml(urls);
       this.toast(`Importing ${urls.length} feeds...`);
       fileInput.value = '';
-      // poll until all feeds arrive or timeout
       const start = Date.now();
       const target = prevCount + urls.length;
       const poll = async () => {
@@ -1135,7 +1297,6 @@ const App = {
       const episodes = (this.currentPodcast.episodes || []).slice();
       this.sortEpisodes(episodes);
       this.renderEpisodes(episodes, this.currentPodcast.id);
-      // Update button text
       const btn = document.querySelector('.sort-btn');
       if (btn) btn.textContent = this.episodeSortAsc ? 'Oldest' : 'Newest';
     }

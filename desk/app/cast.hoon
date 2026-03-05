@@ -11,11 +11,12 @@
   $%  state-0:cast
       state-1:cast
       state-2:cast
+      state-3:cast
   ==
 --
 ::
 %-  agent:dbug
-=|  state-2:cast
+=|  state-3:cast
 =*  state  -
 =*  archived  archived.state
 %+  verb  |
@@ -36,35 +37,74 @@
   |=  =vase
   ^-  (quip card _this)
   =/  old  !<(versioned-state vase)
+  |^
   :-  ~
   ?-  -.old
-      %2  this(state old)
+      %3  this(state old)
+      %2
+    %=  this
+      state  :*  %3
+        podcasts.old  (upgrade-episodes episodes.old)  estate.old
+        queue.old  settings.old  cache.old
+        current.old  archived.old  history.old
+        feed-hashes.old  feed-errors.old
+        podcast-speeds.old  podcast-order.old
+        *(map episode-id:cast @t)
+        *(map episode-id:cast (list [position=@ud label=@t]))
+        *(map podcast-id:cast @ud)
+        *(map podcast-id:cast @ud)
+      ==
+    ==
+  ::
       %1
     %=  this
-      state  :*  %2
-        podcasts.old  episodes.old  estate.old
+      state  :*  %3
+        podcasts.old  (upgrade-episodes episodes.old)  estate.old
         queue.old  settings.old  cache.old
         current.old  archived.old  history.old
         feed-hashes.old
         *(map @t @t)
         *(map podcast-id:cast @ud)
         *(list podcast-id:cast)
+        *(map episode-id:cast @t)
+        *(map episode-id:cast (list [position=@ud label=@t]))
+        *(map podcast-id:cast @ud)
+        *(map podcast-id:cast @ud)
       ==
     ==
   ::
       %0
     %=  this
-      state  :*  %2
-        podcasts.old  episodes.old  estate.old
+      state  :*  %3
+        podcasts.old  (upgrade-episodes episodes.old)  estate.old
         queue.old  settings.old  cache.old
         current.old  archived.old  history.old
         *(map podcast-id:cast @uvH)
         *(map @t @t)
         *(map podcast-id:cast @ud)
         *(list podcast-id:cast)
+        *(map episode-id:cast @t)
+        *(map episode-id:cast (list [position=@ud label=@t]))
+        *(map podcast-id:cast @ud)
+        *(map podcast-id:cast @ud)
       ==
     ==
   ==
+  ::  convert episode-0 maps to episode maps (add empty chapters)
+  ++  upgrade-episodes
+    |=  old-eps=(map podcast-id:cast (map episode-id:cast episode-0:cast))
+    ^-  (map podcast-id:cast (map episode-id:cast episode:cast))
+    %-  ~(run by old-eps)
+    |=  inner=(map episode-id:cast episode-0:cast)
+    ^-  (map episode-id:cast episode:cast)
+    %-  ~(run by inner)
+    |=  ep=episode-0:cast
+    ^-  episode:cast
+    :*  title.ep  description.ep  audio-url.ep
+        pub-date.ep  duration.ep  guid.ep  image-url.ep
+        ~
+    ==
+  --
 ::
 ++  on-init
   ^-  (quip card _this)
@@ -253,7 +293,7 @@
         (~(put by podcasts) pid ['uploads' 'Uploads' '' 'Uploaded audio files' '' '' now.bowl])
       =/  eid=episode-id:cast  (sham audio-url.act)
       =/  ep=episode:cast
-        [title.act '' audio-url.act now.bowl 0 audio-url.act '']
+        [title.act '' audio-url.act now.bowl 0 audio-url.act '' ~]
       =/  eps=(map episode-id:cast episode:cast)
         (fall (~(get by episodes) pid) *(map episode-id:cast episode:cast))
       =.  episodes  (~(put by episodes) pid (~(put by eps) eid ep))
@@ -384,6 +424,43 @@
         %reorder-podcasts
       =.  podcast-order  order.act
       `this
+    ::
+        %set-note
+      =/  eid  episode-id.act
+      =.  notes
+        ?:  =('' note.act)
+          (~(del by notes) eid)
+        (~(put by notes) eid note.act)
+      `this
+    ::
+        %add-bookmark
+      =/  eid  episode-id.act
+      =/  existing=(list [position=@ud label=@t])
+        (fall (~(get by bookmarks) eid) ~)
+      =.  bookmarks
+        (~(put by bookmarks) eid (snoc existing [position.act label.act]))
+      `this
+    ::
+        %remove-bookmark
+      =/  eid  episode-id.act
+      =/  existing=(list [position=@ud label=@t])
+        (fall (~(get by bookmarks) eid) ~)
+      =.  bookmarks
+        %+  ~(put by bookmarks)  eid
+        (skip existing |=([p=@ud l=@t] =(p position.act)))
+      `this
+    ::
+        %log-listen
+      =/  pid  podcast-id.act
+      =.  listen-time
+        (~(put by listen-time) pid (add seconds.act (fall (~(get by listen-time) pid) 0)))
+      `this
+    ::
+        %log-complete
+      =/  pid  podcast-id.act
+      =.  completed-count
+        (~(put by completed-count) pid (add 1 (fall (~(get by completed-count) pid) 0)))
+      `this
     ==
   ::
   ::  HTTP request handling
@@ -504,6 +581,9 @@
           |=  [eid=episode-id:cast ep=episode:cast]
           =/  es=episode-state:cast
             (fall (~(get by estate) eid) *episode-state:cast)
+          =/  ep-note=@t  (fall (~(get by notes) eid) '')
+          =/  ep-bookmarks=(list [position=@ud label=@t])
+            (fall (~(get by bookmarks) eid) ~)
           %-  pairs:enjs:format
           :~  ['id' s+(scot %uv eid)]
               ['title' s+title.ep]
@@ -517,6 +597,23 @@
               ['position' (numb:enjs:format position.es)]
               ['downloaded' b+downloaded.es]
               ['archived' b+(~(has in archived) eid)]
+              ['note' s+ep-note]
+              :-  'bookmarks'
+              :-  %a
+              %+  turn  ep-bookmarks
+              |=  [p=@ud l=@t]
+              %-  pairs:enjs:format
+              :~  ['position' (numb:enjs:format p)]
+                  ['label' s+l]
+              ==
+              :-  'chapters'
+              :-  %a
+              %+  turn  chapters.ep
+              |=  [s=@ud t=@t]
+              %-  pairs:enjs:format
+              :~  ['start' (numb:enjs:format s)]
+                  ['title' s+t]
+              ==
           ==
       ==
     ::
@@ -574,9 +671,22 @@
       %-  pairs:enjs:format
       :~  :-  'current'
           ?~  current  ~
+          =/  pid  podcast-id.u.current
+          =/  eid  episode-id.u.current
+          =/  pod=(unit podcast:cast)  (~(get by podcasts) pid)
+          =/  ep-map=(unit (map episode-id:cast episode:cast))  (~(get by episodes) pid)
+          =/  ep=(unit episode:cast)
+            ?~  ep-map  ~
+            (~(get by u.ep-map) eid)
+          =/  es=episode-state:cast
+            (fall (~(get by estate) eid) *episode-state:cast)
           %-  pairs:enjs:format
-          :~  ['podcast-id' s+(scot %uv podcast-id.u.current)]
-              ['episode-id' s+(scot %uv episode-id.u.current)]
+          :~  ['podcast-id' s+(scot %uv pid)]
+              ['episode-id' s+(scot %uv eid)]
+              ['podcast-title' s+?~(pod '' title.u.pod)]
+              ['episode-title' s+?~(ep '' title.u.ep)]
+              ['position' (numb:enjs:format position.es)]
+              ['image-url' s+?~(pod '' image-url.u.pod)]
           ==
       ==
     ::
@@ -655,6 +765,44 @@
           "</body></opml>"
         ==
       [[200 ['content-type' 'text/xml']~] `(as-octs:mimes:html (crip xml-tape))]
+    ::
+        [%stats ~]
+      =/  total-seconds=@ud
+        %+  roll  ~(val by listen-time)
+        |=  [s=@ud a=@ud]
+        (add s a)
+      =/  total-completed=@ud
+        %+  roll  ~(val by completed-count)
+        |=  [s=@ud a=@ud]
+        (add s a)
+      =/  per-pod=(list [podcast-id:cast @ud @ud])
+        %+  turn  ~(tap by podcasts)
+        |=  [pid=podcast-id:cast pod=podcast:cast]
+        :+  pid
+          (fall (~(get by listen-time) pid) 0)
+        (fall (~(get by completed-count) pid) 0)
+      ::  sort by listen seconds descending
+      =/  sorted=(list [podcast-id:cast @ud @ud])
+        %+  sort  per-pod
+        |=  [[* a=@ud *] [* b=@ud *]]
+        (gth a b)
+      %-  json-response:gen:server
+      %-  pairs:enjs:format
+      :~  ['total-seconds' (numb:enjs:format total-seconds)]
+          ['total-completed' (numb:enjs:format total-completed)]
+          :-  'podcasts'
+          :-  %a
+          %+  turn  sorted
+          |=  [pid=podcast-id:cast secs=@ud comp=@ud]
+          =/  pod=(unit podcast:cast)  (~(get by podcasts) pid)
+          %-  pairs:enjs:format
+          :~  ['id' s+(scot %uv pid)]
+              ['title' s+?~(pod '' title.u.pod)]
+              ['image-url' s+?~(pod '' image-url.u.pod)]
+              ['seconds' (numb:enjs:format secs)]
+              ['completed' (numb:enjs:format comp)]
+          ==
+      ==
     ::
         [%'s3-config' ~]
       ::  read credentials and configuration from %storage agent
@@ -832,6 +980,29 @@
           =/  order=(list podcast-id:cast)
             ((ot ~[order+(ar (se %uv))]) jon)
           [%reorder-podcasts order]
+        ::
+            %'set-note'
+          =/  f  (ot ~[episode-id+(se %uv) note+so])
+          =/  [eid=@uv n=@t]  (f jon)
+          [%set-note eid n]
+        ::
+            %'add-bookmark'
+          =/  f  (ot ~[episode-id+(se %uv) position+ni label+so])
+          =/  [eid=@uv pos=@ud lbl=@t]  (f jon)
+          [%add-bookmark eid pos lbl]
+        ::
+            %'remove-bookmark'
+          =/  f  (ot ~[episode-id+(se %uv) position+ni])
+          =/  [eid=@uv pos=@ud]  (f jon)
+          [%remove-bookmark eid pos]
+        ::
+            %'log-listen'
+          =/  f  (ot ~[podcast-id+(se %uv) seconds+ni])
+          =/  [pid=@uv secs=@ud]  (f jon)
+          [%log-listen pid secs]
+        ::
+            %'log-complete'
+          [%log-complete ((ot ~[podcast-id+(se %uv)]) jon)]
         ==
       --
     --

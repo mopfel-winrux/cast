@@ -42,6 +42,8 @@
     |=  item=manx
     ^-  [episode-id:cast episode:cast]
     =/  guid=@t  (get-text 'guid' c.item)
+    =/  chaps=(list [start=@ud title=@t])
+      (parse-chapters c.item)
     =/  ep=episode:cast
       :*  title=(get-text 'title' c.item)
           description=(get-text 'description' c.item)
@@ -50,6 +52,7 @@
           duration=(fall (parse-duration (get-text 'itunes:duration' c.item)) 0)
           guid=guid
           image-url=(fall (get-itunes-image c.item) '')
+          chapters=chaps
       ==
     =/  eid=episode-id:cast  (sham guid)
     [eid ep]
@@ -300,6 +303,7 @@
           duration=0
           guid=guid
           image-url=(fall (get-attr-text 'media:thumbnail' 'url' (find-media-group c.entry)) '')
+          chapters=~
       ==
     =/  eid=episode-id:cast  (sham guid)
     [eid ep]
@@ -483,4 +487,56 @@
       ['-' ['-' ['>' $(in t.t.t.in, s 0)]]]
     [i.in $(in t.in)]
   [i.in $(in t.in)]
+::
+::  +parse-chapters: extract Podlove Simple Chapters from item children
+::
+::    looks for <psc:chapters> containing <psc:chapter start="HH:MM:SS" title="...">
+::    also handles the underscore-munged variant psc_chapters / psc_chapter
+::    from fix-tag-hyphens (colons are preserved, hyphens become underscores)
+::
+++  parse-chapters
+  |=  children=marl
+  ^-  (list [start=@ud title=@t])
+  =/  chap-node=(unit manx)
+    =/  n=(unit manx)  (find-tag 'psc:chapters' children)
+    ?^  n  n
+    (find-tag 'psc_chapters' children)
+  ?~  chap-node  ~
+  =/  items=marl
+    =/  a=marl  (find-tags 'psc:chapter' c.u.chap-node)
+    ?^  a  a
+    (find-tags 'psc_chapter' c.u.chap-node)
+  %+  murn  items
+  |=  ch=manx
+  ^-  (unit [start=@ud title=@t])
+  =/  start-attr=(unit @t)  (get-attr 'start' a.g.ch)
+  ?~  start-attr  ~
+  =/  title-attr=(unit @t)  (get-attr 'title' a.g.ch)
+  ?~  title-attr  ~
+  =/  start-secs=(unit @ud)  (parse-chapter-time u.start-attr)
+  ?~  start-secs  ~
+  `[u.start-secs u.title-attr]
+::
+::  +parse-chapter-time: parse "HH:MM:SS" or "HH:MM:SS.mmm" to seconds
+::
+++  parse-chapter-time
+  |=  t=@t
+  ^-  (unit @ud)
+  ?:  =('' t)  ~
+  =/  tape=tape  (trip t)
+  ::  strip milliseconds if present (everything after '.')
+  =/  dot  (find "." tape)
+  =?  tape  ?=(^ dot)  (scag u.dot tape)
+  ::  try HH:MM:SS
+  =/  parsed  (rust tape ;~(plug digits ;~(pfix col digits) ;~(pfix col digits)))
+  ?^  parsed
+    =/  [h=@ud m=@ud s=@ud]  u.parsed
+    `:(add (mul h 3.600) (mul m 60) s)
+  ::  try MM:SS
+  =/  parsed2  (rust tape ;~(plug digits ;~(pfix col digits)))
+  ?^  parsed2
+    =/  [m=@ud s=@ud]  u.parsed2
+    `(add (mul m 60) s)
+  ::  try plain seconds
+  (rush t digits)
 --

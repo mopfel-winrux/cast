@@ -16,9 +16,22 @@
       last-fetched=@da
   ==
 ::
-::  single episode
+::  single episode (current)
 ::
 +$  episode
+  $:  title=@t
+      description=@t
+      audio-url=@t
+      pub-date=@da
+      duration=@ud
+      guid=@t
+      image-url=@t
+      chapters=(list [start=@ud title=@t])
+  ==
+::
+::  episode without chapters (for old states)
+::
++$  episode-0
   $:  title=@t
       description=@t
       audio-url=@t
@@ -54,7 +67,7 @@
 +$  state-0
   $:  %0
       podcasts=(map podcast-id podcast)
-      episodes=(map podcast-id (map episode-id episode))
+      episodes=(map podcast-id (map episode-id episode-0))
       estate=(map episode-id episode-state)
       =queue
       =settings
@@ -67,7 +80,7 @@
 +$  state-1
   $:  %1
       podcasts=(map podcast-id podcast)
-      episodes=(map podcast-id (map episode-id episode))
+      episodes=(map podcast-id (map episode-id episode-0))
       estate=(map episode-id episode-state)
       =queue
       =settings
@@ -81,6 +94,23 @@
 +$  state-2
   $:  %2
       podcasts=(map podcast-id podcast)
+      episodes=(map podcast-id (map episode-id episode-0))
+      estate=(map episode-id episode-state)
+      =queue
+      =settings
+      cache=(map episode-id octs)
+      current=(unit [=podcast-id =episode-id])
+      archived=(set episode-id)
+      history=(list [timestamp=@da =podcast-id =episode-id])
+      feed-hashes=(map podcast-id @uvH)
+      feed-errors=(map @t @t)
+      podcast-speeds=(map podcast-id @ud)
+      podcast-order=(list podcast-id)
+  ==
+::
++$  state-3
+  $:  %3
+      podcasts=(map podcast-id podcast)
       episodes=(map podcast-id (map episode-id episode))
       estate=(map episode-id episode-state)
       =queue
@@ -93,6 +123,10 @@
       feed-errors=(map @t @t)
       podcast-speeds=(map podcast-id @ud)
       podcast-order=(list podcast-id)
+      notes=(map episode-id @t)
+      bookmarks=(map episode-id (list [position=@ud label=@t]))
+      listen-time=(map podcast-id @ud)
+      completed-count=(map podcast-id @ud)
   ==
 ::
 ::  poke actions
@@ -121,6 +155,11 @@
       [%mark-before-played =podcast-id before=@da]
       [%set-podcast-speed =podcast-id speed=@ud]
       [%reorder-podcasts order=(list podcast-id)]
+      [%set-note =episode-id note=@t]
+      [%add-bookmark =episode-id position=@ud label=@t]
+      [%remove-bookmark =episode-id position=@ud]
+      [%log-listen =podcast-id seconds=@ud]
+      [%log-complete =podcast-id]
   ==
 ::
 ::  subscription updates

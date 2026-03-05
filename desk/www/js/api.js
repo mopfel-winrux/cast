@@ -13,7 +13,7 @@ const CastAPI = {
     return res.json();
   },
 
-  // POST action to agent
+  // POST action to agent — emits cast-state-changed on success
   async poke(action) {
     const res = await fetch(this.base, {
       method: 'POST',
@@ -22,7 +22,9 @@ const CastAPI = {
       body: JSON.stringify(action)
     });
     if (!res.ok) throw new Error(`Poke error: ${res.status}`);
-    return res.json();
+    const data = await res.json();
+    window.dispatchEvent(new CustomEvent('cast-state-changed'));
+    return data;
   },
 
   // Podcast operations
@@ -33,6 +35,7 @@ const CastAPI = {
   getPlayer() { return this.get('player'); },
   getSettings() { return this.get('settings'); },
   getHistory() { return this.get('history'); },
+  getStats() { return this.get('stats'); },
 
   async getExportOpml() {
     const res = await fetch(`${this.base}/export-opml`, { credentials: 'include' });
@@ -137,5 +140,27 @@ const CastAPI = {
 
   reorderPodcasts(order) {
     return this.poke({ action: 'reorder-podcasts', order });
+  },
+
+  // Notes & bookmarks
+  setNote(episodeId, note) {
+    return this.poke({ action: 'set-note', 'episode-id': episodeId, note });
+  },
+
+  addBookmark(episodeId, position, label) {
+    return this.poke({ action: 'add-bookmark', 'episode-id': episodeId, position: Math.floor(position), label });
+  },
+
+  removeBookmark(episodeId, position) {
+    return this.poke({ action: 'remove-bookmark', 'episode-id': episodeId, position: Math.floor(position) });
+  },
+
+  // Stats
+  logListen(podcastId, seconds) {
+    return this.poke({ action: 'log-listen', 'podcast-id': podcastId, seconds });
+  },
+
+  logComplete(podcastId) {
+    return this.poke({ action: 'log-complete', 'podcast-id': podcastId });
   }
 };
