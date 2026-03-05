@@ -17,6 +17,8 @@ body {
   background: var(--bg);
   color: var(--text);
   min-height: 100vh;
+  padding-top: env(safe-area-inset-top);
+  padding-bottom: env(safe-area-inset-bottom);
 }
 
 #app {
@@ -521,6 +523,8 @@ h1 { margin-bottom: 20px; }
   display: flex;
   gap: 8px;
   margin-bottom: 16px;
+  align-items: center;
+  flex-wrap: wrap;
 }
 
 .filter-btn {
@@ -536,6 +540,19 @@ h1 { margin-bottom: 20px; }
 
 .filter-btn:hover { border-color: var(--accent); color: var(--text); }
 .filter-btn.active { background: var(--accent); border-color: var(--accent); color: white; }
+
+.sort-btn {
+  background: none;
+  border: 1px solid var(--border);
+  color: var(--text-muted);
+  padding: 6px 14px;
+  border-radius: 20px;
+  cursor: pointer;
+  font-size: 12px;
+  transition: all 0.2s;
+  margin-left: auto;
+}
+.sort-btn:hover { border-color: var(--accent); color: var(--text); }
 
 /* Podcast actions */
 .podcast-actions {

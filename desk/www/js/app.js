@@ -6,6 +6,7 @@ const App = {
   episodeFilter: 'all',
   showArchived: false,
   episodeSearch: '',
+  episodeSortAsc: false,
   pollTimer: null,
   downloadedEpisodes: new Set(),
 
@@ -223,7 +224,7 @@ const App = {
         if ((data.episodes || []).length !== oldCount) {
           this.currentPodcast = data;
           const episodes = (data.episodes || []).slice();
-          episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+          this.sortEpisodes(episodes);
           this.renderEpisodes(episodes, id);
         }
       } catch (e) { /* silent */ }
@@ -233,7 +234,7 @@ const App = {
       const data = await CastAPI.getPodcast(id);
       this.currentPodcast = data;
       const episodes = data.episodes || [];
-      episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+      this.sortEpisodes(episodes);
       const visible = episodes.filter(e => !e.archived);
 
       detail.innerHTML = `
@@ -272,6 +273,7 @@ const App = {
           <button class="filter-btn" onclick="App.filterEpisodes('in-progress', this)">In Progress (${visible.filter(e => e.position > 0 && !e.played).length})</button>
           <button class="filter-btn" onclick="App.filterEpisodes('downloaded', this)">Downloaded</button>
           ${episodes.filter(e => e.archived).length > 0 ? `<button class="filter-btn" onclick="App.filterEpisodes('archived', this)">Archived (${episodes.filter(e => e.archived).length})</button>` : ''}
+          <button class="sort-btn" onclick="App.toggleSort()">${this.episodeSortAsc ? 'Oldest' : 'Newest'}</button>
         </div>
       `;
 
@@ -290,7 +292,7 @@ const App = {
       this.episodeSearch = value.trim().toLowerCase();
       if (this.currentPodcast) {
         const episodes = (this.currentPodcast.episodes || []).slice();
-        episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+        this.sortEpisodes(episodes);
         this.renderEpisodes(episodes, this.currentPodcast.id);
       }
     }, 200);
@@ -358,7 +360,7 @@ const App = {
     if (btn) btn.classList.add('active');
     if (this.currentPodcast) {
       const episodes = (this.currentPodcast.episodes || []).slice();
-      episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+      this.sortEpisodes(episodes);
       this.renderEpisodes(episodes, this.currentPodcast.id);
     }
   },
@@ -524,7 +526,7 @@ const App = {
     this.showArchived = !this.showArchived;
     if (this.currentPodcast) {
       const episodes = (this.currentPodcast.episodes || []).slice();
-      episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+      this.sortEpisodes(episodes);
       this.renderEpisodes(episodes, this.currentPodcast.id);
     }
   },
@@ -552,7 +554,7 @@ const App = {
       // Re-render current view to update download indicators
       if (this.currentPodcast) {
         const episodes = (this.currentPodcast.episodes || []).slice();
-        episodes.sort((a, b) => (b['pub-date'] || 0) - (a['pub-date'] || 0));
+        this.sortEpisodes(episodes);
         this.renderEpisodes(episodes, this.currentPodcast.id);
       }
     } catch (e) {
@@ -887,6 +889,24 @@ const App = {
       window.location.hash = '#/';
       this.toast('Unsubscribed', 'success');
     } catch (e) { console.error(e); }
+  },
+
+  sortEpisodes(episodes) {
+    const dir = this.episodeSortAsc ? 1 : -1;
+    episodes.sort((a, b) => dir * ((b['pub-date'] || 0) - (a['pub-date'] || 0)));
+    return episodes;
+  },
+
+  toggleSort() {
+    this.episodeSortAsc = !this.episodeSortAsc;
+    if (this.currentPodcast) {
+      const episodes = (this.currentPodcast.episodes || []).slice();
+      this.sortEpisodes(episodes);
+      this.renderEpisodes(episodes, this.currentPodcast.id);
+      // Update button text
+      const btn = document.querySelector('.sort-btn');
+      if (btn) btn.textContent = this.episodeSortAsc ? 'Oldest' : 'Newest';
+    }
   },
 
   // Helpers

@@ -801,17 +801,55 @@
   ++  handle-feed-response
     |=  [pid=podcast-id:cast resp=client-response:iris is-new=? orig-url=(unit @t)]
     ^-  (quip card _this)
+    =/  feed-url=@t  (fall orig-url '')
     ?.  ?=(%finished -.resp)
-      %-  (slog leaf+"cast: unexpected response type" ~)
+      %-  (slog leaf+"cast: unexpected response for {(trip feed-url)}" ~)
+      `this
+    =/  code=@ud  status-code.response-header.resp
+    ::  follow redirects (301, 302, 307, 308)
+    ?:  ?&  (gte code 301)
+            (lte code 308)
+        ==
+      =/  location=(unit @t)
+        =/  locs=(list @t)
+          %+  murn  headers.response-header.resp
+          |=  [key=@t value=@t]
+          ^-  (unit @t)
+          ?.  =('location' (crip (cass (trip key))))  ~
+          `value
+        ?~  locs  ~
+        `i.locs
+      ?~  location
+        %-  (slog leaf+"cast: {(a-co:co code)} but no Location header for {(trip feed-url)}" ~)
+        `this
+      %-  (slog leaf+"cast: following redirect to {(trip u.location)}" ~)
+      :_  this
+      :~  :*  %pass
+              ?:  is-new
+                /fetch/subscribe/(scot %uv pid)/(scot %t u.location)
+              /fetch/refresh/(scot %uv pid)
+              %arvo  %i
+              %request
+              [%'GET' u.location ~ ~]
+              *outbound-config:iris
+          ==
+      ==
+    ?.  =(200 code)
+      %-  (slog leaf+"cast: got HTTP {(a-co:co code)} for {(trip feed-url)}" ~)
       `this
     ?~  full-file.resp
-      %-  (slog leaf+"cast: empty response body" ~)
+      %-  (slog leaf+"cast: empty response for {(trip feed-url)}" ~)
       `this
     =/  body=@t  q.data.u.full-file.resp
-    =/  feed-url=@t  (fall orig-url '')
+    =/  clean=@t  (sanitize-xml:rss body)
+    =/  dexml=(unit manx)  (de-xml:html clean)
+    ?~  dexml
+      %-  (slog leaf+"cast: de-xml still fails for {(trip feed-url)}" ~)
+      `this
+    %-  (slog leaf+"cast: de-xml ok for {(trip feed-url)}" ~)
     =/  result  (parse-feed:rss feed-url body)
     ?~  result
-      %-  (slog leaf+"cast: failed to parse feed" ~)
+      %-  (slog leaf+"cast: parse-feed failed for {(trip feed-url)}" ~)
       `this
     =/  [pod=podcast:cast eps=(list [episode-id:cast episode:cast])]
       u.result

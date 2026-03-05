@@ -13,7 +13,7 @@
 ++  parse-feed
   |=  [url=@t xml=@t]
   ^-  (unit [=podcast:cast eps=(list [episode-id:cast episode:cast])])
-  =/  parsed=(unit manx)  (de-xml:html xml)
+  =/  parsed=(unit manx)  (de-xml:html (sanitize-xml xml))
   ?~  parsed  ~
   =/  channel=(unit manx)  (find-tag 'channel' c.u.parsed)
   ?~  channel
@@ -357,4 +357,109 @@
   =/  [yr=@ud mn=@ud dy=@ud hr=@ud mi=@ud sc=@ud]
     u.parsed
   `(year [[%.y yr] mn [dy hr mi sc ~]])
+::
+::  +sanitize-xml: strip non-ASCII bytes for de-xml:html compatibility
+::
+::    de-xml:html uses +prn which only matches bytes 32-126.
+::    non-ASCII UTF-8 bytes (>127) and \r (13) cause parse failure.
+::    strips these bytes so the XML structure remains parseable.
+::
+++  sanitize-xml
+  |=  xml=@t
+  ^-  @t
+  =/  in=tape  (trip xml)
+  ::  step 1: strip non-xml-safe bytes
+  =/  clean=tape
+    %+  murn  in
+    |=  c=@
+    ^-  (unit @)
+    ?:  (gth c 127)  ~       ::  strip non-ASCII
+    ?:  =(`@`13 c)   ~       ::  strip \r
+    ?:  =(`@`9 c)    `' '    ::  tab -> space
+    `c
+  ::  step 2: strip processing instructions (<?...?>)
+  =/  no-pis=tape  (strip-pis clean)
+  ::  step 3: replace hyphens in tag names with underscores
+  ::  de-xml:html's +name only accepts [_a-zA-Z][_.a-zA-Z0-9]*
+  ::  so tags like <itunes:new-feed-url> break the parser.
+  ::  also strips trailing whitespace before > in tags, since
+  ::  de-xml:html's +attr consumes the space then fails on >.
+  (crip (fix-tag-hyphens no-pis))
+::
+++  strip-pis
+  |=  in=tape
+  ^-  tape
+  ?~  in  ~
+  ?.  =('<' i.in)
+    [i.in $(in t.in)]
+  ?~  t.in  [i.in ~]
+  ?.  =('?' i.t.in)
+    [i.in $(in t.in)]
+  ::  found <? — skip until ?>
+  $(in (skip-to-pi-end t.t.in))
+::
+++  skip-to-pi-end
+  |=  in=tape
+  ^-  tape
+  ?~  in  ~
+  ?.  =('?' i.in)  $(in t.in)
+  ?~  t.in  ~
+  ?.  =('>' i.t.in)  $(in t.in)
+  t.t.in
+::
+::  +fix-tag-hyphens: replace - with _ in XML tag names
+::
+::    walks through the tape tracking state to only modify
+::    hyphens inside tag names and attribute names, not in
+::    text content, attribute values, or CDATA sections.
+::
+++  fix-tag-hyphens
+  |=  in=tape
+  ^-  tape
+  ::  state: 0=text 1=cdata 2=tag-name 3=tag-body 4=dquote 5=squote
+  =/  s=@ud  0
+  |-
+  ?~  in  ~
+  ?:  =(0 s)  ::  text
+    ?.  =('<' i.in)
+      [i.in $(in t.in)]
+    ::  check for CDATA start: <![CDATA[
+    ?:  ?&  ?=(^ t.in)
+            =('!' i.t.in)
+        ==
+      [i.in $(in t.in, s 1)]
+    [i.in $(in t.in, s 2)]
+  ?:  =(1 s)  ::  cdata — pass through until ]]>
+    ?:  ?&  =(']' i.in)
+            ?=(^ t.in)  =(']' i.t.in)
+            ?=(^ t.t.in)  =('>' i.t.t.in)
+        ==
+      [']' [']' ['>' $(in t.t.t.in, s 0)]]]
+    [i.in $(in t.in)]
+  ?:  =(2 s)  ::  tag-name — replace - with _
+    ?:  =('>' i.in)  [i.in $(in t.in, s 0)]
+    ?:  =(' ' i.in)  [i.in $(in t.in, s 3)]
+    ?:  =('-' i.in)  ['_' $(in t.in)]
+    [i.in $(in t.in)]
+  ?:  =(3 s)  ::  tag-body (attributes)
+    ?:  =('>' i.in)    [i.in $(in t.in, s 0)]
+    ?:  =('"' i.in)    [i.in $(in t.in, s 4)]
+    ?:  =('\'' i.in)   [i.in $(in t.in, s 5)]
+    ?:  =('-' i.in)    ['_' $(in t.in)]
+    ::  strip whitespace before > to avoid de-xml:html attr parse issue
+    ?:  =(' ' i.in)
+      =/  rest=tape  t.in
+      |-  ^-  tape
+      ?~  rest  [' ' ~]
+      ?:  =(' ' i.rest)  $(rest t.rest)  ::  skip consecutive spaces
+      ?:  =('>' i.rest)  ['>' ^$(in t.rest, s 0)]  ::  drop spaces before >
+      [' ' ^$(in rest, s 3)]  ::  not before >, keep one space
+    [i.in $(in t.in)]
+  ?:  =(4 s)  ::  double-quoted attr value
+    ?:  =('"' i.in)    [i.in $(in t.in, s 3)]
+    [i.in $(in t.in)]
+  ?:  =(5 s)  ::  single-quoted attr value
+    ?:  =('\'' i.in)   [i.in $(in t.in, s 3)]
+    [i.in $(in t.in)]
+  [i.in $(in t.in)]
 --

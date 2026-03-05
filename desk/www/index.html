@@ -2,9 +2,15 @@
 <html lang="en">
 <head>
   <meta charset="UTF-8">
-  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
+  <meta name="theme-color" content="#1a1a2e">
+  <meta name="apple-mobile-web-app-capable" content="yes">
+  <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
+  <meta name="apple-mobile-web-app-title" content="Cast">
+  <link rel="manifest" href="/apps/cast/manifest.json">
+  <link rel="apple-touch-icon" href="/apps/cast/icon.svg">
   <title>Cast - Podcast Player</title>
-  <link rel="stylesheet" href="/apps/cast/css/app.css?v=8">
+  <link rel="stylesheet" href="/apps/cast/css/app.css?v=9">
 </head>
 <body>
   <div id="app">
@@ -146,10 +152,15 @@
   </div>
   <div id="toast-container"></div>
   <audio id="audio-element"></audio>
-  <script src="/apps/cast/js/api.js?v=8"></script>
-  <script src="/apps/cast/js/s3.js?v=8"></script>
-  <script src="/apps/cast/js/player.js?v=8"></script>
-  <script src="/apps/cast/js/discover.js?v=8"></script>
-  <script src="/apps/cast/js/app.js?v=8"></script>
+  <script src="/apps/cast/js/api.js?v=9"></script>
+  <script src="/apps/cast/js/s3.js?v=9"></script>
+  <script src="/apps/cast/js/player.js?v=9"></script>
+  <script src="/apps/cast/js/discover.js?v=9"></script>
+  <script src="/apps/cast/js/app.js?v=9"></script>
+  <script>
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('/apps/cast/sw.js', { scope: '/apps/cast/' });
+    }
+  </script>
 </body>
 </html>

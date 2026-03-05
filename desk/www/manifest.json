@@ -1,0 +1,19 @@
+{
+  "name": "Cast - Podcast Player",
+  "short_name": "Cast",
+  "description": "A podcast player for Urbit",
+  "start_url": "/apps/cast/",
+  "scope": "/apps/cast/",
+  "display": "standalone",
+  "background_color": "#1a1a2e",
+  "theme_color": "#1a1a2e",
+  "orientation": "any",
+  "icons": [
+    {
+      "src": "/apps/cast/icon.svg",
+      "sizes": "any",
+      "type": "image/svg+xml",
+      "purpose": "any"
+    }
+  ]
+}
