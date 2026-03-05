@@ -64,6 +64,20 @@
       history=(list [timestamp=@da =podcast-id =episode-id])
   ==
 ::
++$  state-1
+  $:  %1
+      podcasts=(map podcast-id podcast)
+      episodes=(map podcast-id (map episode-id episode))
+      estate=(map episode-id episode-state)
+      =queue
+      =settings
+      cache=(map episode-id octs)
+      current=(unit [=podcast-id =episode-id])
+      archived=(set episode-id)
+      history=(list [timestamp=@da =podcast-id =episode-id])
+      feed-hashes=(map podcast-id @uvH)
+  ==
+::
 ::  poke actions
 ::
 +$  action

@@ -8,12 +8,13 @@
 |%
 +$  card  card:agent:gall
 +$  versioned-state
-  $:  state-0:cast
+  $%  state-0:cast
+      state-1:cast
   ==
 --
 ::
 %-  agent:dbug
-=|  state-0:cast
+=|  state-1:cast
 =*  state  -
 =*  archived  archived.state
 %+  verb  |
@@ -36,7 +37,16 @@
   =/  old  !<(versioned-state vase)
   :-  ~
   ?-  -.old
-    %0  this(state old)
+      %1  this(state old)
+      %0
+    %=  this
+      state  :*  %1
+        podcasts.old  episodes.old  estate.old
+        queue.old  settings.old  cache.old
+        current.old  archived.old  history.old
+        *(map podcast-id:cast @uvH)
+      ==
+    ==
   ==
 ::
 ++  on-init
@@ -851,12 +861,21 @@
       %-  (slog leaf+"cast: empty response for {(trip feed-url)}" ~)
       `this
     =/  body=@t  q.data.u.full-file.resp
+    ::  hash body and skip parsing if unchanged
+    =/  body-hash=@uvH  (sham body)
+    =/  old-hash=(unit @uvH)  (~(get by feed-hashes) pid)
+    ?:  ?&  ?=(^ old-hash)
+            =(u.old-hash body-hash)
+            ?!  is-new
+        ==
+      %-  (slog leaf+"cast: feed unchanged for {(trip feed-url)}, skipping parse" ~)
+      `this
+    =.  feed-hashes  (~(put by feed-hashes) pid body-hash)
     =/  clean=@t  (sanitize-xml:rss body)
     =/  dexml=(unit manx)  (de-xml:html clean)
     ?~  dexml
-      %-  (slog leaf+"cast: de-xml still fails for {(trip feed-url)}" ~)
+      %-  (slog leaf+"cast: de-xml failed for {(trip feed-url)}" ~)
       `this
-    %-  (slog leaf+"cast: de-xml ok for {(trip feed-url)}" ~)
     =/  result  (parse-feed:rss feed-url body)
     ?~  result
       %-  (slog leaf+"cast: parse-feed failed for {(trip feed-url)}" ~)
