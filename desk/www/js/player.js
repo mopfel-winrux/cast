@@ -618,7 +618,13 @@ const Player = {
   },
 
   closeFullscreen() {
-    window.location.hash = this._prevHash || '#/';
+    const target = this._prevHash || '#/';
+    if (window.location.hash === target) {
+      // Hash won't change, so manually trigger the router
+      App.route();
+    } else {
+      window.location.hash = target;
+    }
   },
 
   setSleepTimerFromFullscreen(val) {
