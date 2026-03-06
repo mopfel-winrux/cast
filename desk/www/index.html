@@ -3,15 +3,15 @@
 <head>
   <meta charset="UTF-8">
   <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover">
-  <meta name="theme-color" content="#1a1a2e">
+  <meta name="theme-color" content="#282a36">
   <meta name="apple-mobile-web-app-capable" content="yes">
   <meta name="apple-mobile-web-app-status-bar-style" content="black-translucent">
   <meta name="apple-mobile-web-app-title" content="Cast">
   <link rel="manifest" href="/apps/cast/manifest.json">
   <link rel="apple-touch-icon" href="/apps/cast/icon.svg">
   <title>Cast - Podcast Player</title>
-  <link rel="stylesheet" href="/apps/cast/css/app.css?v=13">
-  <link rel="stylesheet" href="/apps/cast/css/app-light.css?v=13" id="theme-light" disabled>
+  <link rel="stylesheet" href="/apps/cast/css/app.css?v=15">
+  <link rel="stylesheet" href="/apps/cast/css/app-light.css?v=15" id="theme-light" disabled>
 </head>
 <body>
   <div id="app">
@@ -147,11 +147,60 @@
         <div id="discover-grid" class="podcast-grid"></div>
         <div id="discover-empty" class="empty-state" style="display:none">No results found.</div>
       </div>
+      <div id="page-player" class="page">
+        <div id="fullscreen-player" class="fs-player">
+          <button class="back-btn" onclick="Player.closeFullscreen()">&larr; Back</button>
+          <div class="fs-art-wrap">
+            <img id="fs-art" src="" alt="">
+          </div>
+          <div class="fs-info">
+            <div id="fs-title" class="fs-title"></div>
+            <div id="fs-podcast" class="fs-podcast"></div>
+            <div id="fs-chapter" class="fs-chapter"></div>
+          </div>
+          <div class="fs-progress">
+            <input type="range" id="fs-seek" min="0" max="100" value="0" class="seek-bar fs-seek-bar">
+            <div class="fs-time">
+              <span id="fs-current-time">0:00</span>
+              <span id="fs-total-time">0:00</span>
+            </div>
+          </div>
+          <div class="fs-controls">
+            <button class="fs-btn" onclick="Player.skip(-15)">-15</button>
+            <button class="fs-btn fs-play-btn" id="fs-play-pause" onclick="Player.togglePlay()">&#9654;</button>
+            <button class="fs-btn" onclick="Player.skip(30)">+30</button>
+          </div>
+          <div class="fs-extras">
+            <select id="fs-speed" class="speed-select" onchange="Player.setSpeedFromFullscreen(this.value)">
+              <option value="0.5">0.5x</option>
+              <option value="0.75">0.75x</option>
+              <option value="1" selected>1x</option>
+              <option value="1.25">1.25x</option>
+              <option value="1.5">1.5x</option>
+              <option value="2">2x</option>
+              <option value="3">3x</option>
+            </select>
+            <select id="fs-sleep" class="speed-select" title="Sleep timer" onchange="Player.setSleepTimerFromFullscreen(this.value)">
+              <option value="0">Sleep</option>
+              <option value="15">15m</option>
+              <option value="30">30m</option>
+              <option value="45">45m</option>
+              <option value="60">60m</option>
+              <option value="90">90m</option>
+            </select>
+            <button class="fs-btn" title="Add bookmark" onclick="Player.quickBookmark()">&#128278;</button>
+          </div>
+          <div class="fs-queue-section">
+            <h3>Up Next</h3>
+            <div id="fs-queue-list" class="fs-queue-list"></div>
+          </div>
+        </div>
+      </div>
     </main>
   </div>
   <div id="player-bar" class="player-bar hidden">
     <img id="player-art" class="player-art" src="" alt="">
-    <div class="player-info">
+    <div id="player-info" class="player-info">
       <div id="player-title" class="player-title"></div>
       <div id="player-podcast" class="player-podcast"></div>
       <div id="player-chapter" class="player-chapter"></div>
@@ -190,11 +239,11 @@
   <div id="chapter-list" class="chapter-list" style="display:none"></div>
   <div id="toast-container"></div>
   <audio id="audio-element"></audio>
-  <script src="/apps/cast/js/api.js?v=13"></script>
-  <script src="/apps/cast/js/s3.js?v=13"></script>
-  <script src="/apps/cast/js/player.js?v=13"></script>
-  <script src="/apps/cast/js/discover.js?v=13"></script>
-  <script src="/apps/cast/js/app.js?v=13"></script>
+  <script src="/apps/cast/js/api.js?v=15"></script>
+  <script src="/apps/cast/js/s3.js?v=15"></script>
+  <script src="/apps/cast/js/player.js?v=15"></script>
+  <script src="/apps/cast/js/discover.js?v=15"></script>
+  <script src="/apps/cast/js/app.js?v=15"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/apps/cast/sw.js', { scope: '/apps/cast/' });

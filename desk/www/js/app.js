@@ -56,6 +56,8 @@ const App = {
       this.loadStats();
     } else if (id === 'page-discover') {
       // no-op: external data, no refresh needed
+    } else if (id === 'page-player') {
+      // no-op: player manages its own state
     }
   },
 
@@ -92,7 +94,7 @@ const App = {
       if (meta) meta.content = '#f5f5f7';
     } else {
       lightSheet.disabled = true;
-      if (meta) meta.content = '#1a1a2e';
+      if (meta) meta.content = '#282a36';
     }
   },
 

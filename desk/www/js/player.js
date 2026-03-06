@@ -53,6 +53,18 @@ const Player = {
       this.totalTimeEl.textContent = this.formatTime(this.audio.duration);
     });
 
+    // Click player info area to open fullscreen
+    document.getElementById('player-art').addEventListener('click', () => this.openFullscreen());
+    document.getElementById('player-info').addEventListener('click', () => this.openFullscreen());
+
+    // Fullscreen seek bar
+    const fsSeek = document.getElementById('fs-seek');
+    fsSeek.addEventListener('input', () => {
+      if (this.audio.duration) {
+        this.audio.currentTime = (fsSeek.value / 100) * this.audio.duration;
+      }
+    });
+
     // Bookmark button in player bar
     const bookmarkBtn = document.getElementById('player-bookmark');
     if (bookmarkBtn) {
@@ -266,20 +278,37 @@ const Player = {
     }
     this.playPauseBtn.innerHTML = '&#9646;&#9646;';
 
+    // Sync fullscreen player
+    const fsArt = document.getElementById('fs-art');
+    if (fsArt) fsArt.src = imgUrl || '';
+    const fsTitle = document.getElementById('fs-title');
+    if (fsTitle) fsTitle.textContent = episode.title;
+    const fsPodcast = document.getElementById('fs-podcast');
+    if (fsPodcast) fsPodcast.textContent = podcast ? podcast.title : '';
+    const fsPlayBtn = document.getElementById('fs-play-pause');
+    if (fsPlayBtn) fsPlayBtn.innerHTML = '&#9646;&#9646;';
+    const fsSpeed = document.getElementById('fs-speed');
+    if (fsSpeed) fsSpeed.value = this.speedSelect.value;
+
     // Show current chapter subtitle
     const chapterEl = document.getElementById('player-chapter');
     if (chapterEl) chapterEl.textContent = '';
+    const fsChapter = document.getElementById('fs-chapter');
+    if (fsChapter) fsChapter.textContent = '';
   },
 
   togglePlay() {
     if (!this.audio.src) return;
+    const fsBtn = document.getElementById('fs-play-pause');
     if (this.audio.paused) {
       this.audio.play();
       this.playPauseBtn.innerHTML = '&#9646;&#9646;';
+      if (fsBtn) fsBtn.innerHTML = '&#9646;&#9646;';
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'playing';
     } else {
       this.audio.pause();
       this.playPauseBtn.innerHTML = '&#9654;';
+      if (fsBtn) fsBtn.innerHTML = '&#9654;';
       if ('mediaSession' in navigator) navigator.mediaSession.playbackState = 'paused';
       this.clearSleepTimer();
     }
@@ -296,6 +325,13 @@ const Player = {
     this.seekBar.value = pct;
     this.currentTimeEl.textContent = this.formatTime(this.audio.currentTime);
     this.totalTimeEl.textContent = this.formatTime(this.audio.duration);
+    // Sync fullscreen player
+    const fsSeek = document.getElementById('fs-seek');
+    if (fsSeek) fsSeek.value = pct;
+    const fsCur = document.getElementById('fs-current-time');
+    if (fsCur) fsCur.textContent = this.formatTime(this.audio.currentTime);
+    const fsTot = document.getElementById('fs-total-time');
+    if (fsTot) fsTot.textContent = this.formatTime(this.audio.duration);
     if ('mediaSession' in navigator) {
       try {
         navigator.mediaSession.setPositionState({
@@ -454,6 +490,13 @@ const Player = {
     } else if (chapterEl) {
       chapterEl.textContent = '';
     }
+    // Sync fullscreen chapter
+    const fsChapter = document.getElementById('fs-chapter');
+    if (fsChapter && activeIdx >= 0) {
+      fsChapter.textContent = chapters[activeIdx].title;
+    } else if (fsChapter) {
+      fsChapter.textContent = '';
+    }
   },
 
   // Quick bookmark from player bar
@@ -546,6 +589,96 @@ const Player = {
         }
       } catch (e) { /* ignore */ }
     }, 30000);
+  },
+
+  // Fullscreen player
+  openFullscreen() {
+    if (!this.currentEpisode) return;
+    // Remember current page so we can go back
+    this._prevHash = window.location.hash || '#/';
+    const imgUrl = this.currentEpisode['image-url'] || (this.currentPodcast ? this.currentPodcast['image-url'] : '');
+    document.getElementById('fs-art').src = imgUrl || '';
+    document.getElementById('fs-title').textContent = this.currentEpisode.title || '';
+    document.getElementById('fs-podcast').textContent = this.currentPodcast ? this.currentPodcast.title : '';
+    const fsPlayBtn = document.getElementById('fs-play-pause');
+    fsPlayBtn.innerHTML = this.audio.paused ? '&#9654;' : '&#9646;&#9646;';
+    document.getElementById('fs-speed').value = this.speedSelect.value;
+    document.getElementById('fs-sleep').value = this.sleepSelect.value;
+    // Sync progress
+    if (this.audio.duration) {
+      document.getElementById('fs-seek').value = (this.audio.currentTime / this.audio.duration) * 100;
+      document.getElementById('fs-current-time').textContent = this.formatTime(this.audio.currentTime);
+      document.getElementById('fs-total-time').textContent = this.formatTime(this.audio.duration);
+    }
+    // Use page routing system
+    document.querySelectorAll('.page').forEach(p => p.classList.remove('active'));
+    document.querySelectorAll('.nav-link').forEach(l => l.classList.remove('active'));
+    document.getElementById('page-player').classList.add('active');
+    this.loadFullscreenQueue();
+  },
+
+  closeFullscreen() {
+    window.location.hash = this._prevHash || '#/';
+  },
+
+  setSleepTimerFromFullscreen(val) {
+    this.sleepSelect.value = val;
+    this.setSleepTimer();
+  },
+
+  setSpeedFromFullscreen(val) {
+    const speed = parseFloat(val);
+    this.audio.playbackRate = speed;
+    this.speedSelect.value = speed;
+    if (this.currentPodcast && this.currentPodcast.id) {
+      const speedInt = Math.round(speed * 100);
+      this.podcastSpeeds[this.currentPodcast.id] = speedInt;
+      CastAPI.setPodcastSpeed(this.currentPodcast.id, speedInt).catch(console.error);
+    }
+  },
+
+  async loadFullscreenQueue() {
+    const list = document.getElementById('fs-queue-list');
+    try {
+      const data = await CastAPI.getQueue();
+      const queue = data.queue || [];
+      if (queue.length === 0) {
+        list.innerHTML = '<div class="fs-queue-meta">Queue is empty</div>';
+        return;
+      }
+      list.innerHTML = queue.map((item, i) => `
+        <div class="fs-queue-item" onclick="Player.playQueueItemFromFullscreen(${i})">
+          <img class="fs-queue-img" src="${this.escHtml(item['podcast-image'] || item['image-url'] || '')}" alt=""
+               onerror="this.style.background='var(--bg-card)'; this.src=''">
+          <div class="fs-queue-info">
+            <div class="fs-queue-title">${this.escHtml(item.title || '')}</div>
+            <div class="fs-queue-meta">${this.escHtml(item['podcast-title'] || '')}${item.duration ? ' \u00b7 ' + this.formatTime(item.duration) : ''}</div>
+          </div>
+        </div>
+      `).join('');
+      this._fsQueueData = queue;
+    } catch (e) {
+      list.innerHTML = '<div class="fs-queue-meta">Failed to load queue</div>';
+    }
+  },
+
+  playQueueItemFromFullscreen(index) {
+    if (!this._fsQueueData || !this._fsQueueData[index]) return;
+    const item = this._fsQueueData[index];
+    const ep = {
+      id: item['episode-id'],
+      title: item.title || '',
+      'audio-url': item['audio-url'] || '',
+      'image-url': item['image-url'] || '',
+      position: 0
+    };
+    const pod = {
+      id: item['podcast-id'],
+      title: item['podcast-title'] || '',
+      'image-url': item['podcast-image'] || ''
+    };
+    this.play(ep, pod);
+    this.loadFullscreenQueue();
   },
 
   formatTime(seconds) {
