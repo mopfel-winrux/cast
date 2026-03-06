@@ -10,8 +10,8 @@
   <link rel="manifest" href="/apps/cast/manifest.json">
   <link rel="apple-touch-icon" href="/apps/cast/icon.svg">
   <title>Cast - Podcast Player</title>
-  <link rel="stylesheet" href="/apps/cast/css/app.css?v=12">
-  <link rel="stylesheet" href="/apps/cast/css/app-light.css?v=12" id="theme-light" disabled>
+  <link rel="stylesheet" href="/apps/cast/css/app.css?v=13">
+  <link rel="stylesheet" href="/apps/cast/css/app-light.css?v=13" id="theme-light" disabled>
 </head>
 <body>
   <div id="app">
@@ -21,6 +21,7 @@
       <a href="#/queue" class="nav-link" data-page="queue">Queue</a>
       <a href="#/history" class="nav-link" data-page="history">History</a>
       <a href="#/stats" class="nav-link" data-page="stats">Stats</a>
+      <a href="#/discover" class="nav-link" data-page="discover">Discover</a>
       <a href="#/settings" class="nav-link" data-page="settings">Settings</a>
       <a href="#/add" class="nav-link" data-page="add">+ Add</a>
     </nav>
@@ -98,6 +99,18 @@
               <option value="light">Light</option>
             </select>
           </label>
+          <div class="settings-section">
+            <h3>PodcastIndex API</h3>
+            <p class="help-text">Default key provided. Override with your own from podcastindex.org</p>
+            <label>
+              API Key
+              <input type="text" id="setting-pi-key" class="input" placeholder="API Key">
+            </label>
+            <label>
+              API Secret
+              <input type="password" id="setting-pi-secret" class="input" placeholder="API Secret">
+            </label>
+          </div>
           <button id="save-settings" class="btn">Save Settings</button>
           <div class="settings-section">
             <h3>Subscriptions</h3>
@@ -126,8 +139,14 @@
           <div id="upload-progress" class="help-text" style="margin-top:8px"></div>
         </div>
       </div>
-      <!-- discover hidden for now -->
-      <div id="page-discover" class="page"></div>
+      <div id="page-discover" class="page">
+        <h1>Discover</h1>
+        <input type="text" id="discover-search" placeholder="Search podcasts..." class="input discover-search-input">
+        <div id="discover-categories" class="discover-categories"></div>
+        <div id="discover-loading" class="empty-state" style="display:none">Searching...</div>
+        <div id="discover-grid" class="podcast-grid"></div>
+        <div id="discover-empty" class="empty-state" style="display:none">No results found.</div>
+      </div>
     </main>
   </div>
   <div id="player-bar" class="player-bar hidden">
@@ -171,11 +190,11 @@
   <div id="chapter-list" class="chapter-list" style="display:none"></div>
   <div id="toast-container"></div>
   <audio id="audio-element"></audio>
-  <script src="/apps/cast/js/api.js?v=12"></script>
-  <script src="/apps/cast/js/s3.js?v=12"></script>
-  <script src="/apps/cast/js/player.js?v=12"></script>
-  <script src="/apps/cast/js/discover.js?v=12"></script>
-  <script src="/apps/cast/js/app.js?v=12"></script>
+  <script src="/apps/cast/js/api.js?v=13"></script>
+  <script src="/apps/cast/js/s3.js?v=13"></script>
+  <script src="/apps/cast/js/player.js?v=13"></script>
+  <script src="/apps/cast/js/discover.js?v=13"></script>
+  <script src="/apps/cast/js/app.js?v=13"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/apps/cast/sw.js', { scope: '/apps/cast/' });

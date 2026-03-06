@@ -3,20 +3,14 @@
 ::  manages podcast subscriptions, episodes, playback state,
 ::  and serves a JSON API via eyre.
 ::
-/-  cast, storage
+/-  cast, cast-state, storage
 /+  dbug, verb, server, default-agent, rss
 |%
 +$  card  card:agent:gall
-+$  versioned-state
-  $%  state-0:cast
-      state-1:cast
-      state-2:cast
-      state-3:cast
-  ==
 --
 ::
 %-  agent:dbug
-=|  state-3:cast
+=|  state-4:cast
 =*  state  -
 =*  archived  archived.state
 %+  verb  |
@@ -36,14 +30,28 @@
 ++  on-load
   |=  =vase
   ^-  (quip card _this)
-  =/  old  !<(versioned-state vase)
+  =/  old  !<(versioned-state:cast-state vase)
   |^
   :-  ~
   ?-  -.old
-      %3  this(state old)
+      %4  this(state old)
+      %3
+    %=  this
+      state  :*  %4
+        podcasts.old  episodes.old  estate.old
+        queue.old  settings.old  cache.old
+        current.old  archived.old  history.old
+        feed-hashes.old  feed-errors.old
+        podcast-speeds.old  podcast-order.old
+        notes.old  bookmarks.old
+        listen-time.old  completed-count.old
+        [default-pi-key:cast-state default-pi-secret:cast-state]
+      ==
+    ==
+  ::
       %2
     %=  this
-      state  :*  %3
+      state  :*  %4
         podcasts.old  (upgrade-episodes episodes.old)  estate.old
         queue.old  settings.old  cache.old
         current.old  archived.old  history.old
@@ -53,12 +61,13 @@
         *(map episode-id:cast (list [position=@ud label=@t]))
         *(map podcast-id:cast @ud)
         *(map podcast-id:cast @ud)
+        [default-pi-key:cast-state default-pi-secret:cast-state]
       ==
     ==
   ::
       %1
     %=  this
-      state  :*  %3
+      state  :*  %4
         podcasts.old  (upgrade-episodes episodes.old)  estate.old
         queue.old  settings.old  cache.old
         current.old  archived.old  history.old
@@ -70,12 +79,13 @@
         *(map episode-id:cast (list [position=@ud label=@t]))
         *(map podcast-id:cast @ud)
         *(map podcast-id:cast @ud)
+        [default-pi-key:cast-state default-pi-secret:cast-state]
       ==
     ==
   ::
       %0
     %=  this
-      state  :*  %3
+      state  :*  %4
         podcasts.old  (upgrade-episodes episodes.old)  estate.old
         queue.old  settings.old  cache.old
         current.old  archived.old  history.old
@@ -87,6 +97,7 @@
         *(map episode-id:cast (list [position=@ud label=@t]))
         *(map podcast-id:cast @ud)
         *(map podcast-id:cast @ud)
+        [default-pi-key:cast-state default-pi-secret:cast-state]
       ==
     ==
   ==
@@ -461,6 +472,9 @@
       =.  completed-count
         (~(put by completed-count) pid (add 1 (fall (~(get by completed-count) pid) 0)))
       `this
+    ::
+        %set-pi-credentials
+      `this(pi-creds creds.act)
     ==
   ::
   ::  HTTP request handling
@@ -804,6 +818,13 @@
           ==
       ==
     ::
+        [%'pi-credentials' ~]
+      %-  json-response:gen:server
+      %-  pairs:enjs:format
+      :~  ['key' s+key.pi-creds]
+          ['secret' s+secret.pi-creds]
+      ==
+    ::
         [%'s3-config' ~]
       ::  read credentials and configuration from %storage agent
       ::  scry as json to avoid cross-desk type mismatch
@@ -1003,6 +1024,11 @@
         ::
             %'log-complete'
           [%log-complete ((ot ~[podcast-id+(se %uv)]) jon)]
+        ::
+            %'set-pi-credentials'
+          =/  f  (ot ~[key+so secret+so])
+          =/  [k=@t s=@t]  (f jon)
+          [%set-pi-credentials [k s]]
         ==
       --
     --

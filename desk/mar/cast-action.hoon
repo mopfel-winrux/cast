@@ -132,6 +132,11 @@
     ::
         %'log-complete'
       [%log-complete ((ot ~[podcast-id+(se %uv)]) jon)]
+    ::
+        %'set-pi-credentials'
+      =/  f  (ot ~[key+so secret+so])
+      =/  [k=@t s=@t]  (f jon)
+      [%set-pi-credentials [k s]]
     ==
   --
 ++  grad  %noun

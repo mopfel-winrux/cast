@@ -62,6 +62,10 @@
       refresh-interval=@dr
   ==
 ::
+::  podcastindex api credentials
+::
++$  pi-credentials  [key=@t secret=@t]
+::
 ::  agent state
 ::
 +$  state-0
@@ -129,6 +133,28 @@
       completed-count=(map podcast-id @ud)
   ==
 ::
++$  state-4
+  $:  %4
+      podcasts=(map podcast-id podcast)
+      episodes=(map podcast-id (map episode-id episode))
+      estate=(map episode-id episode-state)
+      =queue
+      =settings
+      cache=(map episode-id octs)
+      current=(unit [=podcast-id =episode-id])
+      archived=(set episode-id)
+      history=(list [timestamp=@da =podcast-id =episode-id])
+      feed-hashes=(map podcast-id @uvH)
+      feed-errors=(map @t @t)
+      podcast-speeds=(map podcast-id @ud)
+      podcast-order=(list podcast-id)
+      notes=(map episode-id @t)
+      bookmarks=(map episode-id (list [position=@ud label=@t]))
+      listen-time=(map podcast-id @ud)
+      completed-count=(map podcast-id @ud)
+      pi-creds=pi-credentials
+  ==
+::
 ::  poke actions
 ::
 +$  action
@@ -160,6 +186,7 @@
       [%remove-bookmark =episode-id position=@ud]
       [%log-listen =podcast-id seconds=@ud]
       [%log-complete =podcast-id]
+      [%set-pi-credentials creds=pi-credentials]
   ==
 ::
 ::  subscription updates

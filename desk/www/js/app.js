@@ -54,6 +54,8 @@ const App = {
       this.loadSettingsPage();
     } else if (id === 'page-stats') {
       this.loadStats();
+    } else if (id === 'page-discover') {
+      // no-op: external data, no refresh needed
     }
   },
 
@@ -156,7 +158,7 @@ const App = {
       this.showPage('add');
     } else if (page === 'discover') {
       this.showPage('discover');
-      Discover.render();
+      Discover.init();
     } else {
       this.showPage('home');
     }
@@ -1023,10 +1025,16 @@ const App = {
     } catch (e) { console.error(e); }
   },
 
-  loadSettingsPage() {
+  async loadSettingsPage() {
     document.getElementById('setting-autoplay-next').checked = localStorage.getItem('cast-autoplay-next') === 'true';
     document.getElementById('setting-auto-download').checked = localStorage.getItem('cast-auto-download') === 'true';
     document.getElementById('setting-theme').value = localStorage.getItem('cast-theme') || 'dark';
+    try {
+      const resp = await fetch('/apps/cast/api/pi-credentials');
+      const data = await resp.json();
+      document.getElementById('setting-pi-key').value = data.key || '';
+      document.getElementById('setting-pi-secret').value = data.secret || '';
+    } catch (e) { /* ignore */ }
   },
 
   async handleSaveSettings() {
@@ -1046,6 +1054,14 @@ const App = {
         autoDownload: autoDownload,
         refreshInterval: refresh
       });
+      // Save PI credentials if provided
+      const piKey = document.getElementById('setting-pi-key').value.trim();
+      const piSecret = document.getElementById('setting-pi-secret').value.trim();
+      if (piKey && piSecret) {
+        await CastAPI.poke({ action: 'set-pi-credentials', key: piKey, secret: piSecret });
+        PodcastIndex.key = piKey;
+        PodcastIndex.secret = piSecret;
+      }
       this.toast('Settings saved', 'success');
     } catch (e) {
       console.error(e);

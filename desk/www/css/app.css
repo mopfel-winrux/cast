@@ -899,6 +899,20 @@ h1 { margin-bottom: 20px; }
   border-color: var(--border);
 }
 
+.discover-search-input {
+  margin-bottom: 16px;
+}
+
+.discover-desc {
+  font-size: 11px;
+  color: var(--text-muted);
+  margin-top: 4px;
+  display: -webkit-box;
+  -webkit-line-clamp: 2;
+  -webkit-box-orient: vertical;
+  overflow: hidden;
+}
+
 /* Settings section */
 .settings-section {
   margin-top: 16px;
