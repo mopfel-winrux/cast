@@ -19,7 +19,7 @@ A podcast player for Urbit. Subscribe to RSS feeds and YouTube channels, manage 
 From your ship's dojo:
 
 ```
-|install our %cast
+|install ~nattyv %cast
 ```
 
 Then visit `http://your-ship-url/apps/cast` in your browser.
