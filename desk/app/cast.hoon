@@ -200,22 +200,24 @@
     ::
         %refresh-all
       =/  pods=(list [podcast-id:cast podcast:cast])  ~(tap by podcasts)
-      :_  this
-      %+  turn  pods
-      |=  [pid=podcast-id:cast pod=podcast:cast]
-      ^-  card
-      :*  %pass  /fetch/refresh/(scot %uv pid)
-          %arvo  %i
-          %request
-          [%'GET' feed-url.pod ~ ~]
-          *outbound-config:iris
-      ==
+      =/  cards=(list card)  ~
+      =/  idx=@ud  0
+      |-
+      ?~  pods  :_(this cards)
+      =/  [pid=podcast-id:cast pod=podcast:cast]  i.pods
+      =/  delay=@dr  (mul ~s10 idx)
+      =/  cd=card
+        :*  %pass  /timer/stagger/(scot %uv pid)
+            %arvo  %b
+            [%wait (add now.bowl delay)]
+        ==
+      $(pods t.pods, cards [cd cards], idx +(idx))
     ::
         %set-position
       =/  eid  episode-id.act
       =/  pos  position.act
       =/  es=episode-state:cast
-        (fall (~(get by estate) eid) *episode-state:cast)
+        (fall (~(get by estate) eid) default-episode-state:cast)
       =.  position.es  pos
       =/  upd=update:cast  [%position-updated eid pos]
       :_  this(estate (~(put by estate) eid es))
@@ -225,7 +227,7 @@
         %set-played
       =/  eid  episode-id.act
       =/  es=episode-state:cast
-        (fall (~(get by estate) eid) *episode-state:cast)
+        (fall (~(get by estate) eid) default-episode-state:cast)
       =.  played.es  played.act
       =?  last-played.es  played.act  now.bowl
       =/  upd=update:cast  [%played-updated eid played.act]
@@ -354,7 +356,7 @@
         :~  [%give %fact ~[/updates] cast-update+!>(upd)]
         ==
       =/  es=episode-state:cast
-        (fall (~(get by new-estate) i.eids) *episode-state:cast)
+        (fall (~(get by new-estate) i.eids) default-episode-state:cast)
       =.  played.es  %.y
       %=  $
         new-estate  (~(put by new-estate) i.eids es)
@@ -374,7 +376,7 @@
         :~  [%give %fact ~[/updates] cast-update+!>(upd)]
         ==
       =/  es=episode-state:cast
-        (fall (~(get by new-estate) i.eids) *episode-state:cast)
+        (fall (~(get by new-estate) i.eids) default-episode-state:cast)
       =.  played.es  %.n
       %=  $
         new-estate  (~(put by new-estate) i.eids es)
@@ -420,7 +422,7 @@
       ?.  (lth pub-date.ep.i.ep-list cutoff)
         $(ep-list t.ep-list)
       =/  es=episode-state:cast
-        (fall (~(get by new-estate) eid.i.ep-list) *episode-state:cast)
+        (fall (~(get by new-estate) eid.i.ep-list) default-episode-state:cast)
       =.  played.es  %.y
       %=  $
         new-estate  (~(put by new-estate) eid.i.ep-list es)
@@ -594,7 +596,7 @@
           %+  turn  ~(tap by eps)
           |=  [eid=episode-id:cast ep=episode:cast]
           =/  es=episode-state:cast
-            (fall (~(get by estate) eid) *episode-state:cast)
+            (fall (~(get by estate) eid) default-episode-state:cast)
           =/  ep-note=@t  (fall (~(get by notes) eid) '')
           =/  ep-bookmarks=(list [position=@ud label=@t])
             (fall (~(get by bookmarks) eid) ~)
@@ -643,7 +645,7 @@
           %+  turn  ~(tap by eps)
           |=  [eid=episode-id:cast ep=episode:cast]
           =/  es=episode-state:cast
-            (fall (~(get by estate) eid) *episode-state:cast)
+            (fall (~(get by estate) eid) default-episode-state:cast)
           %-  pairs:enjs:format
           :~  ['id' s+(scot %uv eid)]
               ['title' s+title.ep]
@@ -693,7 +695,7 @@
             ?~  ep-map  ~
             (~(get by u.ep-map) eid)
           =/  es=episode-state:cast
-            (fall (~(get by estate) eid) *episode-state:cast)
+            (fall (~(get by estate) eid) default-episode-state:cast)
           %-  pairs:enjs:format
           :~  ['podcast-id' s+(scot %uv pid)]
               ['episode-id' s+(scot %uv eid)]
@@ -1101,18 +1103,38 @@
     ?^  error.sign-arvo
       %-  (slog leaf+"cast: timer error" ~)
       `this
-    ::  refresh all feeds and reset timer
+    ::  refresh all feeds, staggered 2s apart, and reset timer
     =/  pods=(list [podcast-id:cast podcast:cast])  ~(tap by podcasts)
+    =/  cards=(list card)
+      :~  [%pass /timer/refresh %arvo %b [%wait (add now.bowl refresh-interval.settings)]]
+      ==
+    =/  idx=@ud  0
+    |-
+    ?~  pods  :_(this cards)
+    =/  [pid=podcast-id:cast pod=podcast:cast]  i.pods
+    =/  delay=@dr  (mul ~s10 idx)
+    =/  cd=card
+      :*  %pass  /timer/stagger/(scot %uv pid)
+          %arvo  %b
+          [%wait (add now.bowl delay)]
+      ==
+    $(pods t.pods, cards [cd cards], idx +(idx))
+  ::
+      [%timer %stagger pid=@ ~]
+    ?>  ?=([%behn %wake *] sign-arvo)
+    ?^  error.sign-arvo
+      %-  (slog leaf+"cast: stagger timer error" ~)
+      `this
+    =/  podcast-id=@uv  (slav %uv pid.pole)
+    =/  pod=(unit podcast:cast)  (~(get by podcasts) podcast-id)
+    ?~  pod  `this
     :_  this
-    :-  [%pass /timer/refresh %arvo %b [%wait (add now.bowl refresh-interval.settings)]]
-    %+  turn  pods
-    |=  [pid=podcast-id:cast pod=podcast:cast]
-    ^-  card
-    :*  %pass  /fetch/refresh/(scot %uv pid)
-        %arvo  %i
-        %request
-        [%'GET' feed-url.pod ~ ~]
-        *outbound-config:iris
+    :~  :*  %pass  /fetch/refresh/(scot %uv podcast-id)
+            %arvo  %i
+            %request
+            [%'GET' feed-url.u.pod ~ ~]
+            *outbound-config:iris
+        ==
     ==
   ::
       [%fetch %subscribe pid=@ url=@ ~]
@@ -1253,7 +1275,7 @@
     %-  (slog leaf+"cast: downloaded {(a-co:co p.audio)} bytes" ~)
     ::  update episode-state
     =/  es=episode-state:cast
-      (fall (~(get by estate) eid) *episode-state:cast)
+      (fall (~(get by estate) eid) default-episode-state:cast)
     =.  downloaded.es  %.y
     =.  estate  (~(put by estate) eid es)
     =.  cache  (~(put by cache) eid audio)

@@ -49,6 +49,9 @@
       downloaded=?
       last-played=@da
   ==
+++  default-episode-state
+  ^-  episode-state
+  [played=%.n position=0 downloaded=%.n last-played=*@da]
 ::
 ::  playback queue
 ::

@@ -10,8 +10,8 @@
   <link rel="manifest" href="/apps/cast/manifest.json">
   <link rel="apple-touch-icon" href="/apps/cast/icon.svg">
   <title>Cast - Podcast Player</title>
-  <link rel="stylesheet" href="/apps/cast/css/app.css?v=15">
-  <link rel="stylesheet" href="/apps/cast/css/app-light.css?v=15" id="theme-light" disabled>
+  <link rel="stylesheet" href="/apps/cast/css/app.css?v=16">
+  <link rel="stylesheet" href="/apps/cast/css/app-light.css?v=16" id="theme-light" disabled>
 </head>
 <body>
   <div id="app">
@@ -61,7 +61,7 @@
       </div>
       <div id="page-settings" class="page">
         <h1>Settings</h1>
-        <div class="settings-form">
+        <div class="settings-form" autocomplete="off">
           <label>
             Playback Speed
             <select id="setting-speed">
@@ -104,11 +104,11 @@
             <p class="help-text">Default key provided. Override with your own from podcastindex.org</p>
             <label>
               API Key
-              <input type="text" id="setting-pi-key" class="input" placeholder="API Key">
+              <input type="text" id="setting-pi-key" class="input" placeholder="API Key" autocomplete="off">
             </label>
             <label>
               API Secret
-              <input type="password" id="setting-pi-secret" class="input" placeholder="API Secret">
+              <input type="text" id="setting-pi-secret" class="input" placeholder="API Secret" autocomplete="off">
             </label>
           </div>
           <button id="save-settings" class="btn">Save Settings</button>
@@ -121,7 +121,7 @@
       <div id="page-add" class="page">
         <h1>Add Podcast</h1>
         <div class="add-form">
-          <input type="url" id="feed-url" placeholder="RSS feed URL" class="input">
+          <input type="url" id="feed-url" placeholder="RSS feed URL" class="input" autocomplete="off">
           <button id="subscribe-btn" class="btn">Subscribe</button>
         </div>
         <div class="opml-section">
@@ -133,7 +133,7 @@
         <div class="opml-section">
           <h2>Upload Audio</h2>
           <p class="help-text">Upload an audio file to S3 and add it as an episode.</p>
-          <input type="text" id="upload-title" placeholder="Episode title" class="input">
+          <input type="text" id="upload-title" placeholder="Episode title" class="input" autocomplete="off">
           <input type="file" id="upload-file" accept="audio/*" class="input" style="margin-top:8px">
           <button id="upload-btn" class="btn" style="margin-top:8px">Upload</button>
           <div id="upload-progress" class="help-text" style="margin-top:8px"></div>
@@ -141,7 +141,7 @@
       </div>
       <div id="page-discover" class="page">
         <h1>Discover</h1>
-        <input type="text" id="discover-search" placeholder="Search podcasts..." class="input discover-search-input">
+        <input type="text" id="discover-search" placeholder="Search podcasts..." class="input discover-search-input" autocomplete="off">
         <div id="discover-categories" class="discover-categories"></div>
         <div id="discover-loading" class="empty-state" style="display:none">Searching...</div>
         <div id="discover-grid" class="podcast-grid"></div>
@@ -239,11 +239,11 @@
   <div id="chapter-list" class="chapter-list" style="display:none"></div>
   <div id="toast-container"></div>
   <audio id="audio-element"></audio>
-  <script src="/apps/cast/js/api.js?v=15"></script>
-  <script src="/apps/cast/js/s3.js?v=15"></script>
-  <script src="/apps/cast/js/player.js?v=15"></script>
-  <script src="/apps/cast/js/discover.js?v=15"></script>
-  <script src="/apps/cast/js/app.js?v=15"></script>
+  <script src="/apps/cast/js/api.js?v=16"></script>
+  <script src="/apps/cast/js/s3.js?v=16"></script>
+  <script src="/apps/cast/js/player.js?v=16"></script>
+  <script src="/apps/cast/js/discover.js?v=16"></script>
+  <script src="/apps/cast/js/app.js?v=16"></script>
   <script>
     if ('serviceWorker' in navigator) {
       navigator.serviceWorker.register('/apps/cast/sw.js', { scope: '/apps/cast/' });
